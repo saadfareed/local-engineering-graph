@@ -8,7 +8,7 @@ import {once} from 'node:events';
 import {createTask,advance,readTask,recover,cancel,status} from '../src/state.js';
 const graph=JSON.parse(await readFile(new URL('../graphs/product-build.v2.json',import.meta.url)));
 async function fixture(fn){const root=await mkdtemp(join(tmpdir(),'graph-v2-'));try{const t=await createTask(root,graph,'Demo');const file=join(root,'.engineering','tasks',t.id,'task.json');await writeFile(join(root,'app.js'),'original');await writeFile(join(root,'.engineering','tasks',t.id,'report.md'),'report');await fn({root,file});}finally{await rm(root,{recursive:true,force:true});}}
-const evidence=outcome=>({summary:'Recorded result',artifacts:['report.md'],approval:{decision:outcome,scope:'brief version 1',response:'actual recorded response'},codeFiles:['app.js'],criteria:[{id:'C1',status:'verified',command:'npm test',result:'passed'}]});
+const evidence=outcome=>({summary:'Recorded result',artifacts:['report.md'],approval:{criteriaIds:['C1'],decision:outcome,scope:'brief version 1',response:'actual recorded response'},codeFiles:['app.js'],criteria:[{id:'C1',status:'verified',command:'npm test',result:'passed'}]});
 async function route(file,outcomes){for(const outcome of outcomes){const t=await readTask(file);await advance(file,{outcome,expectedRevision:t.revision,evidence:evidence(outcome)});}}
 test('v2 requires artifacts and approval details; reaches complete',()=>fixture(async({file})=>{
  await assert.rejects(advance(file,{outcome:'ready',expectedRevision:0,evidence:'text'}),/Structured/);

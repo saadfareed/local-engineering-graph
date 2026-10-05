@@ -1,11 +1,12 @@
 {
   "name": "local-engineering-graph",
-  "version": "0.2.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "validate": "node src/cli.js validate graphs/product-build.v1.json && node src/cli.js validate graphs/product-build.v2.json"
+    "validate": "node scripts/validate.js",
+    "check": "npm test && npm run validate"
   },
   "engines": {
     "node": ">=22"
