@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "rules": [
+    {"id":"scope-approval","enforcement":"instructional","rule":"Record explicit user scope approval before implementation; replan material changes."},
+    {"id":"host-permissions","enforcement":"host","rule":"Host filesystem, execution and network permissions remain binding."},
+    {"id":"external-actions","enforcement":"instructional","rule":"Publishing, messaging, and destructive actions require applicable user authorization."},
+    {"id":"graph-transitions","enforcement":"runner","rule":"Only declared outcomes and budgeted edges can execute."},
+    {"id":"validation-evidence","enforcement":"instructional","rule":"Record criterion status, commands, results, and code revision; unknown is not passed."},
+    {"id":"context-budget","enforcement":"instructional","rule":"Read task-specific context; stop after two unsuccessful repair attempts and report blockers."}
+  ]
+}
