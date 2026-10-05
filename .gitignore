@@ -1,0 +1,7 @@
+node_modules/
+.engineering/
+.env
+.product-map.lock
+.product-map.recover
+.product-map.journal*
+.product-map.backup.*

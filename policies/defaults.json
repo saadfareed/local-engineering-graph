@@ -1,0 +1,55 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "id": "scope-approval",
+      "enforcement": "instructional",
+      "rule": "Record explicit user scope approval before implementation; replan material changes."
+    },
+    {
+      "id": "host-permissions",
+      "enforcement": "host",
+      "rule": "Host filesystem, execution and network permissions remain binding."
+    },
+    {
+      "id": "external-actions",
+      "enforcement": "instructional",
+      "rule": "Publishing, messaging, and destructive actions require applicable user authorization."
+    },
+    {
+      "id": "graph-transitions",
+      "enforcement": "runner",
+      "rule": "Only declared outcomes and budgeted edges can execute."
+    },
+    {
+      "id": "validation-evidence",
+      "enforcement": "instructional",
+      "rule": "Record criterion status, commands, results, and code revision; unknown is not passed."
+    },
+    {
+      "id": "context-budget",
+      "enforcement": "instructional",
+      "rule": "Read task-specific context; stop after two unsuccessful repair attempts and report blockers."
+    },
+    {
+      "id": "design-quality",
+      "enforcement": "instructional",
+      "rule": "Choose patterns for demonstrated constraints; record decision IDs, rationale, alternatives and tradeoffs; assess reuse and deliver small testable slices."
+    },
+    {
+      "id": "engineering-evidence",
+      "enforcement": "runner",
+      "rule": "V5 requires structured design planning, implementation decision coverage/performance assessment, and engineering review checks."
+    },
+    {
+      "id": "productivity-claims",
+      "enforcement": "instructional",
+      "rule": "Treat 10x productivity as a goal; claim gains only with a comparable recorded baseline and observed results."
+    },
+    {
+      "id": "reasoned-planning",
+      "enforcement": "instructional",
+      "rule": "Assess material proposals independently; explain stance, compare realistic options and lifecycle costs, mark uncertainty, and honor informed authorized user decisions."
+    }
+  ]
+}

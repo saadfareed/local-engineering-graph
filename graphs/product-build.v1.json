@@ -1,0 +1,207 @@
+{
+  "id": "product-build",
+  "version": 1,
+  "start": "discovery",
+  "requiredGates": [
+    "scope_approval",
+    "domain_check",
+    "review",
+    "validation"
+  ],
+  "nodes": {
+    "discovery": {
+      "type": "agent",
+      "role": "supreme-coordinator",
+      "outcomes": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "scope_approval": {
+      "type": "approval",
+      "role": "user",
+      "outcomes": [
+        "approved",
+        "rejected"
+      ]
+    },
+    "planning": {
+      "type": "agent",
+      "role": "planner",
+      "outcomes": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "domain_check": {
+      "type": "agent",
+      "role": "domain-coordinator",
+      "outcomes": [
+        "allowed",
+        "question",
+        "blocked"
+      ]
+    },
+    "clarification": {
+      "type": "approval",
+      "role": "user",
+      "outcomes": [
+        "answered",
+        "rejected"
+      ]
+    },
+    "implementation": {
+      "type": "agent",
+      "role": "worker",
+      "outcomes": [
+        "completed",
+        "blocked"
+      ]
+    },
+    "review": {
+      "type": "agent",
+      "role": "reviewer",
+      "outcomes": [
+        "passed",
+        "changes_required",
+        "blocked"
+      ]
+    },
+    "validation": {
+      "type": "agent",
+      "role": "validator",
+      "outcomes": [
+        "passed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "complete": {
+      "type": "terminal",
+      "role": null,
+      "outcomes": [],
+      "success": true
+    },
+    "blocked": {
+      "type": "terminal",
+      "role": null,
+      "outcomes": []
+    }
+  },
+  "edges": [
+    {
+      "outcome": "ready",
+      "to": "scope_approval",
+      "maxTraversals": 3,
+      "from": "discovery"
+    },
+    {
+      "outcome": "approved",
+      "to": "planning",
+      "maxTraversals": 3,
+      "from": "scope_approval"
+    },
+    {
+      "outcome": "rejected",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "scope_approval"
+    },
+    {
+      "outcome": "ready",
+      "to": "domain_check",
+      "maxTraversals": 3,
+      "from": "planning"
+    },
+    {
+      "outcome": "allowed",
+      "to": "implementation",
+      "maxTraversals": 3,
+      "from": "domain_check"
+    },
+    {
+      "outcome": "question",
+      "to": "clarification",
+      "maxTraversals": 3,
+      "from": "domain_check"
+    },
+    {
+      "outcome": "answered",
+      "to": "planning",
+      "maxTraversals": 3,
+      "from": "clarification"
+    },
+    {
+      "outcome": "rejected",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "clarification"
+    },
+    {
+      "outcome": "completed",
+      "to": "review",
+      "maxTraversals": 3,
+      "from": "implementation"
+    },
+    {
+      "outcome": "passed",
+      "to": "validation",
+      "maxTraversals": 3,
+      "from": "review"
+    },
+    {
+      "outcome": "changes_required",
+      "to": "implementation",
+      "maxTraversals": 3,
+      "from": "review"
+    },
+    {
+      "outcome": "passed",
+      "to": "complete",
+      "maxTraversals": 3,
+      "from": "validation"
+    },
+    {
+      "outcome": "failed",
+      "to": "implementation",
+      "maxTraversals": 3,
+      "from": "validation"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "discovery"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "planning"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "domain_check"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "implementation"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "review"
+    },
+    {
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3,
+      "from": "validation"
+    }
+  ]
+}
