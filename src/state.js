@@ -28,7 +28,7 @@ function validateHistory(t) {
   if(!t.traversals||typeof t.traversals!=='object'||Array.isArray(t.traversals)||Object.values(t.traversals).some(v=>!Number.isSafeInteger(v)||v<0)) throw Error('Corrupted traversal counts');
   let node=t.graph.start;
   let approvedScope;
-  const counts={};
+  const counts=Object.create(null);
   for (const [index,event] of t.events.entries()) {
     if (t.graph.nodes[node].type==='terminal') throw Error('Corrupted terminal history');
     if (!event || event.revision!==index+1 || event.node!==node) throw Error('Corrupted task history');
@@ -63,7 +63,7 @@ async function safeFile(root,path) {
   return readFile(full);
 }
 async function artifactSnapshot(file,paths) {
-  const result={};
+  const result=Object.create(null);
   for (const path of paths) result[path]=digest(await safeFile(dirname(file),path));
   return result;
 }
@@ -72,7 +72,7 @@ async function verifyApproval(file,t) {
   if (digest(await artifactSnapshot(file,Object.keys(t.approvedScope.artifacts)))!==digest(t.approvedScope.artifacts)) throw Error('Approved artifacts changed; replan before implementation or passing');
 }
 async function projectSnapshot(root) {
-  const result={};
+  const result=Object.create(null);
   const excluded=new Set(['.git','.engineering','node_modules','.product-map.lock','.product-map.recover']);
   async function walk(directory) {
     for (const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))) {
@@ -115,14 +115,14 @@ export async function recover(file){
     await unlink(path);return {recovered:true,backup};
   }finally{await recovery.close();await unlink(`${file}.recover`);}
 }
-async function snapshots(root,paths){
+async function snapshots(root,paths,strict=true){
   if(!Array.isArray(paths)||!paths.length)throw Error('Code files required');
-  const result={};for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel.startsWith('..')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(await safeFile(root,p));}return result;
+  const result=Object.create(null);for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel.startsWith('..')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(strict?await safeFile(root,p):await readFile(full));}return result;
 }
 async function checkEvidence(file,t,outcome,e){
   if(t.graph.evidenceMode!=='structured'){if(typeof e!=='string'||!e.trim())throw Error('Evidence or decision required');return;}
   if(!e||typeof e!=='object'||typeof e.summary!=='string'||!e.summary.trim()||!Array.isArray(e.artifacts)||!e.artifacts.length)throw Error('Structured evidence requires summary and artifacts');
-  for(const p of e.artifacts){if(typeof p!=='string'||!p)throw Error('Invalid artifact path');await safeFile(dirname(file),p);}
+  for(const p of e.artifacts){if(typeof p!=='string'||!p)throw Error('Invalid artifact path');if(t.schemaVersion===3)await safeFile(dirname(file),p);else await readFile(resolve(dirname(file),p));}
   const role=t.graph.nodes[t.node].role;
   if (t.schemaVersion===3) e.artifactSnapshot=await artifactSnapshot(file,e.artifacts);
   if(t.graph.nodes[t.node].type==='approval'){
@@ -149,13 +149,13 @@ async function checkEvidence(file,t,outcome,e){
       files=[...new Set([...files,...mapped,'PRODUCT.json','PRODUCT.md',model.product.policies,model.product.architecture,...(model.product.schemaVersion===2?Object.values(model.product.documents):[])])];
       t.featureIds=e.featureIds;
     }
-    t.code=await snapshots(t.root,files);
+    t.code=await snapshots(t.root,files,t.schemaVersion===3);
     if(t.schemaVersion===3) t.projectSnapshot=await projectSnapshot(t.root);
   }
   if(t.graph.productMap&&['reviewer','validator'].includes(role)&&outcome==='passed')await checkProduct(t.root);
   if(['reviewer','validator'].includes(role)&&['passed','changes_required','failed'].includes(outcome)){
     if(!t.code)throw Error('Implementation code snapshot required');
-    if(outcome==='passed'&&digest(await snapshots(t.root,Object.keys(t.code)))!==digest(t.code))throw Error('Code changed since implementation; return to implementation before passing');
+    if(outcome==='passed'&&digest(await snapshots(t.root,Object.keys(t.code),t.schemaVersion===3))!==digest(t.code))throw Error('Code changed since implementation; return to implementation before passing');
     if(outcome==='passed'&&t.schemaVersion===3&&digest(await projectSnapshot(t.root))!==digest(t.projectSnapshot)) throw Error('Code changed in project since implementation; return to implementation before passing');
     if(role==='validator'&&outcome==='passed'&&(!Array.isArray(e.criteria)||!e.criteria.length||e.criteria.some(c=>!c.id||c.status!=='verified'||typeof c.command!=='string'||!c.command.trim()||typeof c.result!=='string'||!c.result.trim())))throw Error('Validation requires verified criteria with commands and results');
     if(role==='validator'&&outcome==='passed'&&t.schemaVersion===3) {
@@ -171,7 +171,7 @@ export async function advance(file,{outcome,evidence,expectedRevision}){
     if(remaining(t,edge)<=0)throw Error('Traversal budget exhausted; cancel or supersede task');
     const submission=t.graph.nodes[edge.to].submissionOutcome;
     if(submission){const exit=t.graph.edges.find(e=>e.from===edge.to&&e.outcome===submission);if(!exit||remaining(t,exit)<=0)throw Error('No implementation submissions remain; cancel or supersede task before doing more work');}
-    if(t.graph.productPreparation&&t.graph.nodes[edge.to].role==='worker'&&t.graph.nodes[t.node].role==='domain-coordinator')await checkProductPrepared(t.root);
+    if(t.graph.productPreparation&&t.graph.nodes[edge.to].role==='worker'&&(!t.code||t.graph.nodes[t.node].role==='domain-coordinator'))await checkProductPrepared(t.root);
     if(outcome!=='replan'&&(t.graph.nodes[edge.to].role==='worker'||outcome==='passed')) await verifyApproval(file,t);
     evidence=structuredClone(evidence);
     await checkEvidence(file,t,outcome,evidence);

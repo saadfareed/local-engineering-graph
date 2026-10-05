@@ -180,7 +180,7 @@ A feature version is an engineering change record. It does not publish a package
 
 For a change request: find the feature in PRODUCT.md, inspect feature-context, read scope and policies, update the affected components and tests, refresh the map, review and validate, then append the version record. Add a new feature when the responsibility is new. Retire obsolete features explicitly and update dependencies before removing code.
 
-Map writes use a local exclusive .product-map.lock file. A crash may leave that lock; inspect its recorded PID and ensure the writer has exited before manually removing it. The task recover command does not recover product-map locks. If history or registry saved successfully but the index update was interrupted, use product-sync to regenerate the index. Back up files before manual repair. Registry, history, and index writes are individually atomic, not one transaction.
+Map writes use a local exclusive .product-map.lock file and a write-ahead undo journal. Failed operations roll back. After a crashed local writer exits, use `node src/cli.js product-recover /absolute/product/path`; it backs up the journal and restores interrupted changes before removing the lock. Recovery refuses live or foreign-host writers. Incomplete metadata and stale recovery mutexes require manual inspection. The task recover command handles task locks separately. Full power-loss durability is not guaranteed.
 
 V5 also requires design/reuse planning, implementation assessment and engineering review evidence; see [engineering quality](engineering-quality.md).
 

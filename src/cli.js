@@ -15,7 +15,7 @@ try {
    console.log(`${command} ${usage[command]}`);process.exit(0);
  }
  if(command==='help'||command==='--help'||command==='-h') {
-   console.log(Object.entries(usage).map(([name,args])=>`${name} ${args}`).join('\n')+'\nSee docs/user-manual.md and docs/workflow.md for evidence examples.');
+   console.log(Object.entries(usage).map(([name,args])=>`${name} ${args}`).join('\n')+'\nSee docs/workflow.md and docs/product-map.md for evidence examples.');
    process.exit(0);
  }
  if(arities[command]&&(args.length<arities[command][0]||args.length>arities[command][1])) throw Error(`Invalid arguments for ${command}; use --help`);

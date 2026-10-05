@@ -66,7 +66,7 @@ test('product recovery refuses live writers and restores interrupted writes',asy
 });
 test('CLI rejects incomplete arguments and malformed revisions',async()=>{
  for(const args of [['start'],['advance','missing','ready','1.5','evidence']]) {
-  const env={...process.env};delete env.NODE_TEST_CONTEXT;const child=spawn('node',['src/cli.js',...args],{env});let stderr='';child.stderr.on('data',chunk=>stderr+=chunk);child.stdout.on('data',chunk=>stderr+=chunk);const [code]=await once(child,'close');assert.equal(code,1);
+  const env={...process.env};delete env.NODE_TEST_CONTEXT;const child=spawn('node',['src/cli.js',...args],{env});child.stderr.resume();child.stdout.resume();const [code]=await once(child,'close');assert.equal(code,1);
  }
 });
 test('feature creation preserves an existing unregistered directory',async()=>{

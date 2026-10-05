@@ -1,4 +1,4 @@
-import {mkdir,readFile,writeFile,rename,unlink,rm,realpath,stat,open,lstat} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,unlink,rm,realpath,stat,open,lstat,readlink,symlink,chmod} from 'node:fs/promises';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
 import {hostname} from 'node:os';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -37,9 +37,14 @@ async function journalPath(path,directory=false) {
     try {await lstat(path);throw Object.assign(new Error(`Directory already exists: ${path}`),{code:'EEXIST'});}
     catch(e) {if(e.code!=='ENOENT')throw e;}
   }
-  let previous=null;
-  if(!directory) try { previous=(await readFile(path)).toString('base64'); } catch(e) { if(e.code!=='ENOENT') throw e; }
-  transaction.entries.push({path,previous,directory});
+  let previous=null,mode,link;
+  if(!directory) try {
+    const metadata=await lstat(path);
+    if(metadata.isSymbolicLink())link=await readlink(path);
+    else if(metadata.isFile()){previous=(await readFile(path)).toString('base64');mode=metadata.mode&0o7777;}
+    else throw Error(`Unsupported transaction target: ${path}`);
+  } catch(e) {if(e.code!=='ENOENT')throw e;}
+  transaction.entries.push({path,previous,directory,...(mode===undefined?{}:{mode}),...(link===undefined?{}:{link})});
   const temporary=transaction.path+'.tmp';
   const handle=await open(temporary,'w');
   try { await handle.writeFile(json(transaction.entries));await handle.sync(); } finally { await handle.close(); }
@@ -48,7 +53,12 @@ async function journalPath(path,directory=false) {
 async function atomic(path,value){
   await journalPath(path);
   const tmp=`${path}.${randomUUID()}.tmp`;
-  try{await writeFile(tmp,value,{flag:'wx'});await rename(tmp,path);}
+  try{
+    let mode;try{const metadata=await lstat(path);if(metadata.isFile())mode=metadata.mode&0o7777;}catch(e){if(e.code!=='ENOENT')throw e;}
+    await writeFile(tmp,value,{flag:'wx',...(mode===undefined?{}:{mode})});
+    if(mode!==undefined)await chmod(tmp,mode);
+    await rename(tmp,path);
+  }
   finally{await unlink(tmp).catch(e=>{if(e.code!=='ENOENT')throw e;});}
 }
 async function rollback(root,entries) {
@@ -56,8 +66,12 @@ async function rollback(root,entries) {
     const path=local(root,relative(root,entry.path));
     await destination(root,relative(root,path));
     if(entry.directory) await rm(path,{recursive:true,force:true});
+    else if(entry.link!==undefined){
+      const tmp=`${path}.${randomUUID()}.tmp`;
+      try{await symlink(entry.link,tmp);await rename(tmp,path);}finally{await unlink(tmp).catch(e=>{if(e.code!=='ENOENT')throw e;});}
+    }
     else if(entry.previous===null) await unlink(path).catch(e=>{if(e.code!=='ENOENT')throw e;});
-    else await atomic(path,Buffer.from(entry.previous,'base64'));
+    else {await atomic(path,Buffer.from(entry.previous,'base64'));if(entry.mode!==undefined)await chmod(path,entry.mode);}
   }
 }
 async function locked(root,fn){
@@ -87,6 +101,16 @@ export async function recoverProduct(root) {
     const journal=join(root,'.product-map.journal');
     let entries=[];try {entries=JSON.parse(await readFile(journal,'utf8'));} catch(e) {if(e.code!=='ENOENT')throw e;}
     if(!Array.isArray(entries))throw Error('Invalid product journal');
+    // Validate the entire undo log before changing any destination.
+    const paths=new Set();
+    for(const entry of entries){
+      if(!entry||typeof entry.path!=='string'||!isAbsolute(entry.path)||paths.has(entry.path)||typeof entry.directory!=='boolean')throw Error('Invalid product journal entry');
+      local(root,relative(root,entry.path));paths.add(entry.path);
+      if(entry.previous!==null&&(typeof entry.previous!=='string'||Buffer.from(entry.previous,'base64').toString('base64')!==entry.previous))throw Error('Invalid product journal contents');
+      if(entry.mode!==undefined&&(!Number.isInteger(entry.mode)||entry.mode<0||entry.mode>0o7777))throw Error('Invalid product journal permissions');
+      if(entry.link!==undefined&&(typeof entry.link!=='string'||!entry.link||entry.previous!==null||entry.directory))throw Error('Invalid product journal symlink');
+      if(entry.directory&&entry.previous!==null)throw Error('Invalid product journal directory');
+    }
     const backup=join(root,`.product-map.backup.${randomUUID()}.json`);
     await writeFile(backup,json(entries),{flag:'wx'});
     if((await stat(path)).ino!==before.ino||await readFile(path,'utf8')!==raw)throw Error('Lock changed during recovery');
@@ -153,15 +177,17 @@ function index(model){
 export async function initProduct(root,name){
   root=resolve(root);if(!nonempty(name))throw Error('Product name required');await mkdir(root,{recursive:true});
   return locked(root,async()=>{
-    const created=[];
-    try{
-      const product={schemaVersion:2,name,policies:'PRODUCT-POLICIES.md',architecture:'PRODUCT-ARCHITECTURE.md',documents:Object.fromEntries([...Object.entries(documentTemplates).map(([key,value])=>[key,value[0]]),['features','FEATURES.md']]),domains:[],preparation:{status:'draft'},features:[]};
-      const files={'PRODUCT.json':json(product),'PRODUCT-POLICIES.md':'# Product policies\n\nRecord product-wide rules, ownership, applicability, and exceptions here. Feature rules inherit these policies.\n','PRODUCT-ARCHITECTURE.md':'# Product architecture\n\nRecord component boundaries, shared interfaces, dependency direction, data ownership, and testing conventions here. Document design decisions with IDs, patterns (or simple modules), reasons, alternatives and tradeoffs. Use existing framework conventions and components where applicable.\n','PRODUCT.md':index({product,features:new Map()})};
-      for(const [path,title,instructions] of Object.values(documentTemplates))files[path]=`# ${title}\n\n${instructions}\n`;
-      files['FEATURES.md']=featureList({product,features:new Map()});
-      for(const [path,contents] of Object.entries(files)){await journalPath(join(root,path));await writeFile(join(root,path),contents,{flag:'wx'});created.push(join(root,path));}
-      return {root,index:join(root,'PRODUCT.md'),registry:join(root,'PRODUCT.json')};
-    }catch(e){for(const path of created)await unlink(path);throw e;}
+    const product={schemaVersion:2,name,policies:'PRODUCT-POLICIES.md',architecture:'PRODUCT-ARCHITECTURE.md',documents:Object.fromEntries([...Object.entries(documentTemplates).map(([key,value])=>[key,value[0]]),['features','FEATURES.md']]),domains:[],preparation:{status:'draft'},features:[]};
+    const files={'PRODUCT.json':json(product),'PRODUCT-POLICIES.md':'# Product policies\n\nRecord product-wide rules, ownership, applicability, and exceptions here. Feature rules inherit these policies.\n','PRODUCT-ARCHITECTURE.md':'# Product architecture\n\nRecord component boundaries, shared interfaces, dependency direction, data ownership, and testing conventions here. Document design decisions with IDs, patterns (or simple modules), reasons, alternatives and tradeoffs. Use existing framework conventions and components where applicable.\n','PRODUCT.md':index({product,features:new Map()})};
+    for(const [path,title,instructions] of Object.values(documentTemplates))files[path]=`# ${title}\n\n${instructions}\n`;
+    files['FEATURES.md']=featureList({product,features:new Map()});
+    // Reject existing targets before recording undo entries, including dangling symlinks.
+    for(const path of Object.keys(files)) {
+      try{await lstat(join(root,path));throw Object.assign(new Error(`Target already exists: ${path}`),{code:'EEXIST'});}
+      catch(e){if(e.code!=='ENOENT')throw e;}
+    }
+    for(const [path,contents] of Object.entries(files)){await journalPath(join(root,path));await writeFile(join(root,path),contents,{flag:'wx'});}
+    return {root,index:join(root,'PRODUCT.md'),registry:join(root,'PRODUCT.json')};
   });
 }
 export async function addFeature(root,id,title){
@@ -170,27 +196,24 @@ export async function addFeature(root,id,title){
     const model=await loadProduct(root);if(model.features.has(id))throw Error('Feature already registered');
     await mkdir(join(root,'features'),{recursive:true});await contained(root,'features');
     const directory=`features/${id}`,dir=local(root,directory);await journalPath(dir,true);await mkdir(dir);
-    let registered=false;
-    try{
-      const f={schemaVersion:1,id,title,status:'planned',...(model.product.schemaVersion===2?{domainIds:[],documentation:`${directory}/README.md`,userFlows:`${directory}/USER-FLOWS.md`}:{}),scope:`${directory}/SCOPE.md`,policies:`${directory}/POLICIES.md`,dependsOn:[],components:[],tests:[]};
-      await writeFile(join(dir,'feature.json'),json(f),{flag:'wx'});
-      await writeFile(join(dir,'SCOPE.md'),`# ${title}: scope\n\n## Purpose\n\nDescribe the user problem and intended behavior.\n\n## Included and excluded\n\nRecord the approved boundaries and scope decision reference.\n\n## Acceptance criteria\n\nAssign stable criterion IDs and observable checks.\n\n## Interfaces and data\n\nRecord public component contracts, data ownership, and compatibility requirements.\n`,{flag:'wx'});
-      await writeFile(join(dir,'POLICIES.md'),`# ${title}: policies\n\nInherit ../../PRODUCT-POLICIES.md. Record feature-specific rules with IDs, applicability, enforcement owner, and exception procedure.\n`,{flag:'wx'});
-      await writeFile(join(dir,'history.json'),'[]\n',{flag:'wx'});
-      if(model.product.schemaVersion===2){
-        await writeFile(join(dir,'README.md'),`# ${title}: user documentation\n\nDescribe actual behavior, usage, setup, examples, errors and limitations. Link acceptance criteria and flow IDs.\n`,{flag:'wx'});
-        await writeFile(join(dir,'USER-FLOWS.md'),`# ${title}: user flows\n\nDocument flow IDs, actors, preconditions, steps, success/failure paths and associated unit/integration test IDs. Link the root USER-FLOWS.md.\n`,{flag:'wx'});
-      }
-      model.product.features.push({id,directory});await atomic(join(root,'PRODUCT.json'),json(model.product));registered=true;
-      await writeIndexes(await loadProduct(root));return f;
-    }catch(e){if(!registered)await rm(dir,{recursive:true,force:true});throw e;}
+    const f={schemaVersion:1,id,title,status:'planned',...(model.product.schemaVersion===2?{domainIds:[],documentation:`${directory}/README.md`,userFlows:`${directory}/USER-FLOWS.md`}:{}),scope:`${directory}/SCOPE.md`,policies:`${directory}/POLICIES.md`,dependsOn:[],components:[],tests:[]};
+    await writeFile(join(dir,'feature.json'),json(f),{flag:'wx'});
+    await writeFile(join(dir,'SCOPE.md'),`# ${title}: scope\n\n## Purpose\n\nDescribe the user problem and intended behavior.\n\n## Included and excluded\n\nRecord the approved boundaries and scope decision reference.\n\n## Acceptance criteria\n\nAssign stable criterion IDs and observable checks.\n\n## Interfaces and data\n\nRecord public component contracts, data ownership, and compatibility requirements.\n`,{flag:'wx'});
+    await writeFile(join(dir,'POLICIES.md'),`# ${title}: policies\n\nInherit ../../PRODUCT-POLICIES.md. Record feature-specific rules with IDs, applicability, enforcement owner, and exception procedure.\n`,{flag:'wx'});
+    await writeFile(join(dir,'history.json'),'[]\n',{flag:'wx'});
+    if(model.product.schemaVersion===2){
+      await writeFile(join(dir,'README.md'),`# ${title}: user documentation\n\nDescribe actual behavior, usage, setup, examples, errors and limitations. Link acceptance criteria and flow IDs.\n`,{flag:'wx'});
+      await writeFile(join(dir,'USER-FLOWS.md'),`# ${title}: user flows\n\nDocument flow IDs, actors, preconditions, steps, success/failure paths and associated unit/integration test IDs. Link the root USER-FLOWS.md.\n`,{flag:'wx'});
+    }
+    model.product.features.push({id,directory});await atomic(join(root,'PRODUCT.json'),json(model.product));
+    await writeIndexes(await loadProduct(root));return f;
   });
 }
 export async function syncProduct(root){root=resolve(root);return locked(root,async()=>{const model=await loadProduct(root);await writeIndexes(model);return {features:model.features.size,index:join(root,'PRODUCT.md')};});}
 function featureList(model){return '# Feature list\n\n'+index(model).slice(index(model).indexOf('| Feature |'));}
 async function destination(root,path){const full=local(root,path),base=await realpath(root),parent=await realpath(dirname(full)),rel=relative(base,parent);if(rel==='..'||rel.startsWith('../')||isAbsolute(rel))throw Error(`Generated file parent escapes project: ${path}`);return full;}
 async function writeIndexes(model){await atomic(join(model.root,'PRODUCT.md'),index(model));if(model.product.schemaVersion===2)await atomic(await destination(model.root,model.product.documents.features),featureList(model));}
-async function snapshotPaths(root,paths){const snapshot={};for(const path of new Set(paths))snapshot[path]=hash(await file(root,path));return snapshot;}
+async function snapshotPaths(root,paths){const snapshot=Object.create(null);for(const path of new Set(paths))snapshot[path]=hash(await file(root,path));return snapshot;}
 function featurePaths(m,f){
   const upstream=new Set();const visit=id=>{for(const dep of m.features.get(id).dependsOn)if(!upstream.has(dep)){upstream.add(dep);visit(dep);}};visit(f.id);
   const mapped=[f,...[...upstream].map(id=>m.features.get(id))];
@@ -261,7 +284,7 @@ export async function releaseFeature(root,id,record){
     if(m.product.schemaVersion===2)await checkFeatureSync(root,id);
     if(!Array.isArray(record.artifacts)||!record.artifacts.length)throw Error('Version requires validation artifact paths');
     const paths=[...featurePaths(m,f),...(m.product.schemaVersion===2?[join(f.directory,'synchronization.json')]:[]),...record.artifacts];
-    const snapshot={};for(const path of new Set(paths))snapshot[path]=hash(await file(root,path));
+    const snapshot=Object.create(null);for(const path of new Set(paths))snapshot[path]=hash(await file(root,path));
     const entry={version:record.version,time:new Date().toISOString(),codeRevision:record.codeRevision,changes:record.changes,tests:record.tests,artifacts:record.artifacts,snapshot};
     f.history.push(entry);await atomic(join(root,f.directory,'history.json'),json(f.history));await writeIndexes(await loadProduct(root));return entry;
   });

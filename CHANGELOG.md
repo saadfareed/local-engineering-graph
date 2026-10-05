@@ -36,3 +36,32 @@ Added v6 reasoned proposal assessments and design analyses with options, pros/co
 - Reuse the loaded product model when checking feature synchronization.
 - Add CLI argument/revision checks, help, automatic graph discovery and CI.
 - Preserve legacy evidence behavior for schema-1/2 tasks; new tasks use schema 3.
+
+### Audit follow-up
+
+- Preserve existing initialization targets, symlinks and permission modes during rollback.
+- Require structured role/evidence contracts on every successful graph route.
+- Reserve administrative cancellation outcomes and reject ambiguous traversal keys.
+- Include prototype-named paths in task and product snapshots.
+- Restore legacy artifact and declared-code path behavior.
+- Enforce initial preparation through intermediate nodes and reject malformed recovery journals before applying undo entries.
+- Add targeted regression tests for each confirmed finding.
+
+### User documentation and examples
+
+- Rewrite the user manual for version 0.7.0 with setup, all CLI commands, approval/criterion contracts, product lifecycle, repair and recovery instructions.
+- Add a working in-memory task tracker, criterion tests and a complete V2 walkthrough with editable evidence files.
+- Add V6 proposal, design, implementation, review, synchronization and release templates.
+- Update product-map recovery guidance and README navigation.
+
+### Coding-agent user guide
+
+- Make the user manual focus on conversational agent use, onboarding, real-world prompts, expected results, practical impact and limitations.
+- Clarify that native plugin packaging is not yet included and setup depends on the host.
+- Move direct CLI instructions into a separate runner manual and label code/evidence examples as maintainer resources.
+
+### Cleanup
+
+- Remove standalone developer demos, evidence templates and the redundant runner manual; retain agent-facing prompt examples and technical contracts.
+- Remove duplicate product rollback cleanup and unused CLI test-output collection.
+- Correct the skill reference to use V6 for new product work and refresh documentation links.

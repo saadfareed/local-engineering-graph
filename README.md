@@ -2,7 +2,9 @@
 
 A host-neutral skill package and dependency-free local workflow runner. No hosted backend, model API, MCP server, or native plugin manifest is included. The host assistant executes role instructions; the runner persists and validates its reported transitions.
 
-Start with the [user manual](docs/user-manual.md) for scope, benefits, setup, everyday use, and troubleshooting.
+Start with the [user manual](docs/user-manual.md) to use this workflow through your coding agent: setup, example prompts, expected results, impact and troubleshooting. The package currently provides a skill and local runner; native plugin installation is host-specific and is not included.
+
+For direct CLI operation or package maintenance, see the [workflow contracts](docs/workflow.md), [product lifecycle](docs/product-lifecycle.md) and [product map](docs/product-map.md). Run `node src/cli.js --help` for the command reference.
 
 Requires Node.js 22+. No dependency installation is needed.
 

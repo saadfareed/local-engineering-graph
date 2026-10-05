@@ -1,267 +1,205 @@
-# Local Engineering Graph: user manual
+# Using Local Engineering Graph in your coding agent
 
-Local Engineering Graph helps you take a software request from an agreed brief to implementation, review, and recorded validation. It keeps the task's progress and supporting documents in your project so you can resume work in a later session.
+Local Engineering Graph gives your coding agent a structured way to plan, implement, review and verify software work, while keeping a record you can resume later. You describe the goal in chat, decide the scope, and inspect the results. The agent manages the workflow files and runner commands.
 
-This manual covers version 0.6.0. V6 adds reasoned proposal assessments and option/cost comparisons to the engineering workflow.
+This manual is for people using the workflow through a coding agent. It covers version 0.7.0 and includes prompts you can adapt to your own project.
 
-## The problem we are fixing
+## What is available today
 
-Software work conducted through an assistant can lose important context between sessions: what was agreed, which files changed, what was reviewed, and which checks actually ran. Scope changes can slip into implementation without a fresh decision. Repeated repair attempts can consume time without a clear stopping point.
+The repository currently provides an **agent skill and local workflow runner**. It does not yet include a native plugin manifest, marketplace installer or automatic agent dispatcher. You can use it through a coding agent that can read the skill, access your local project, and run Node.js commands. A host-specific plugin installation must be added or configured separately.
 
-This package gives that work a persistent sequence, a record of decisions, and explicit completion requirements. It also addresses operational interruptions: stale writers, conflicting updates, exhausted retries, and tasks that need to be cancelled or replaced.
+You do not need to operate the CLI or write evidence JSON yourself when your agent can do those tasks. The agent needs access to the complete package, including its graphs, role instructions and documentation; copying only the skill text is insufficient.
 
-## Scope and intended users
+## Connect it to your agent
 
-Use it for a scoped software feature, bug fix, or small product build where you want an assistant to maintain a brief, plan, review, and validation record. It suits developers and technical product owners who can provide a local project and an assistant with filesystem and command access.
+1. Make this repository available locally and note its absolute path.
+2. Open your target project in a coding agent with permission to read and edit that project and run local commands. The workflow runner requires Node.js 22 or later; it needs no dependency installation or model API key of its own.
+3. Have the agent load `skills/engineering-workflow/SKILL.md` from the package. If your agent supports installed skills, use its supported installation mechanism and retain access to the full package root. The exact mechanism depends on your coding agent.
+4. Give the agent a first request using the prompt below. Ask it to verify setup before beginning the feature.
 
-The current package contains a host-neutral assistant skill, role instructions, workflow graphs, and a local command-line runner. Host integration varies: there is no native plugin manifest or universal one-click installation yet. The assistant performs the work; the runner records and checks transitions. You can also operate the runner yourself.
+Replace both example paths:
 
-Automatic agent dispatch, parallel workers, hosted background execution, publishing, and connector integrations are future work. Your host's permissions and tools determine which implementation and validation actions are available.
+> Load the engineering-workflow skill from `/absolute/path/to/plugins/skills/engineering-workflow/SKILL.md`. Its package root is `/absolute/path/to/plugins`. Use it for `/absolute/path/to/my-project`. Check that you can read the package, access the project and run the workflow runner. Explain any setup issue before starting work.
 
-## Approach and benefits
+**Expected result:** the agent confirms the available workflow and project location, or explains a specific missing capability. Reading the skill is not the same as installing a native plugin.
 
-| Approach | What it gives you |
-| --- | --- |
-| Save a brief with measurable acceptance criteria | A shared definition of what should be built |
-| Record scope approval before implementation | A visible decision about the work being authorized |
-| Plan and assess affected domains | Earlier identification of dependencies and constraints |
-| Save implementation evidence and declared file snapshots | A basis for detecting code changes before checks pass |
-| Require review and validation stages | Separate opportunities to inspect the change and test its behavior |
-| Persist state, artifacts, and revision numbers | Work that can be resumed and updates that reject stale revisions |
-| Bound transitions and check repair capacity | A stopping point before another repair cannot be submitted |
-| Provide recovery, cancellation, and superseding links | A practical way to handle interrupted or obsolete tasks |
+If your host cannot load skills directly, ask it to read and follow the skill file for this task. Whether those instructions persist into another session depends on the host; provide the package and saved task location again when resuming.
 
-These are process checks. The runner verifies record structure and selected file contents; the assistant remains responsible for the quality and truth of the work.
+## Your first request
 
-## Setup
+Be concrete about the user problem, project, constraints and desired behavior. You can leave implementation choices open.
 
-1. Have Node.js 22 or later available.
-2. Open a terminal in this package's root directory, where package.json lives.
-3. Run the package checks:
+> Use engineering-workflow for this project. Add task creation, completion and deletion. Users should be able to create a task with a title, mark it complete and remove it. Preserve the existing UI and storage approach. Exclude notifications and collaboration. Inspect the project, propose measurable acceptance criteria and a small implementation plan, and present the scope for my approval before implementation.
 
-```sh
-node --version
-npm test
-npm run validate
-```
+**What the agent should return before implementing:**
 
-No dependency installation is needed.
+- Its understanding of the objective and included/excluded behavior.
+- Acceptance criteria you can use to judge success.
+- Material questions, dependencies and risks.
+- A recommended approach, with reasons and alternatives for important choices.
+- A concrete scope for your approval and a saved task location.
 
-For assistant use, ask your host to read `skills/engineering-workflow/SKILL.md` from this package. If your host supports installed skills, copy that skill folder to its supported location and preserve access to this package's root. Tell the assistant where both the package and target project are located. There is no global installation performed by these commands.
+For example, it might propose: C1 creates and displays a task; C2 marks an existing task complete; C3 removes the selected task while preserving others. These are illustrative criteria—the agent should adapt them to your actual application.
 
-Example request to your assistant:
+You can respond:
 
-> Use the engineering-workflow skill from /absolute/path/to/local-engineering-graph for /absolute/path/to/my-project. Add a task list with create, complete, and delete actions. Save the brief and acceptance criteria, then present the scope for my approval. Record implementation, review, and validation evidence as the task progresses.
+> Approve the proposed scope and C1–C3 in brief version 1. Proceed with that implementation plan.
 
-Replace the paths and feature description with your own. The host must load the skill instructions for this request to work.
+Or revise it:
 
-## What you do during a task
+> Before I approve, include keyboard access in the acceptance criteria and exclude changes to the database schema. Update the scope and explain the impact.
 
-Provide an objective and any constraints, answer material questions, and approve or reject a concrete scope. The assistant saves the supporting documents, performs each role, and submits the transitions.
+Approval applies to the presented scope. A substantial scope change during implementation should return for a new decision. The workflow records your actual response; elapsed time and an agent recommendation are not approval.
 
-| Stage | Expected work | What happens next |
+## What happens while the agent works
+
+| Stage | What the agent does | What you receive or decide |
 | --- | --- | --- |
-| Discovery | Save brief and criterion IDs | Scope approval |
-| Scope approval | Record your actual decision and brief version | Approved goes to planning; rejected ends blocked |
-| Planning | Save steps, dependencies, and criterion checks | Domain assessment |
-| Domain assessment | Check policies and shared interfaces | Implementation, clarification, or blocked |
-| Clarification | Record your answer to a domain question | Planning, or blocked if rejected |
-| Implementation | Make the change and record affected code files | Review, renewed scope approval, or blocked |
-| Review | Inspect the change and save findings | Validation or implementation for repairs |
-| Validation | Run checks and record criterion results | Complete or implementation for repairs |
+| Discovery | Inspects relevant context and defines measurable success | A clear scope, recommendation and material questions |
+| Scope approval | Records your decision against the saved brief | Approve, reject or request revisions |
+| Planning and domain assessment | Checks architecture, policies, reuse and dependencies | An implementation plan and unresolved constraints |
+| Implementation | Changes approved code and keeps relevant docs, flows and tests aligned | Progress, scope-change requests and implementation evidence |
+| Review | Inspects the result against scope and engineering decisions | Findings and repairs, or a recorded review pass |
+| Validation | Runs available checks and records each approved criterion | Actual commands/results and any unverified behavior |
+| Completion | Preserves the task and product records | Changed behavior, verification, limitations and a handoff location |
 
-If scope changes during implementation, the assistant saves a revised brief and uses `replan` to return to scope approval. Review or validation findings can return the task to implementation while submission capacity remains. All normal transitions need supporting evidence.
+The graph advances only when the agent submits valid records. It cannot judge whether an agent's claims are true; the quality of inspection and actual check execution still matters.
 
-When one assistant performs both implementation and review, that review is not independent. Separate reviewers depend on your host's capabilities and your authorization.
+## Different ways to use it
 
-## Planning recommendations
+### 1. Build a new product in small slices
 
-Codex explains why it agrees, disagrees or agrees conditionally. Important choices include options, pros/cons, risks and build/operating/maintenance/migration costs with evidence and uncertainty. It recommends an approach for your priorities and respects your informed scope decision. See [critical planning](critical-planning.md) for v6 discovery and planning fields.
+> Use engineering-workflow to build an appointment-booking product in this repository. Start with one user journey: view available slots and request an appointment. Compare suitable approaches against our small-team constraints. Define the product scope, domains, feature list, technical/product roadmaps and acceptance criteria. Present the first slice for approval before implementation. Keep payments and reminders outside the initial scope.
 
-## Design quality and productive implementation
+**Expected result:** a product plan, an initial feature map, explicit exclusions and a proposed first delivery slice. After approval, the agent implements and verifies that slice rather than treating the entire product roadmap as completed.
 
-Codex selects patterns that fit the actual problem, reuses existing components, and builds small testable slices. V5 requires design decisions and engineering checks in planning, implementation and review evidence. Follow the [engineering quality guide](engineering-quality.md) for the JSON fields. Productivity improvements require measured comparisons; 10× is a goal rather than a guaranteed result.
+**Impact:** makes a broad request reviewable and gives later features an existing plan and dependency record. The planning overhead is more worthwhile for a multi-feature product than for a trivial edit.
 
-## Prepare the product and keep changes synchronized
+### 2. Add a feature to an existing application
 
-Follow the [product lifecycle guide](product-lifecycle.md). Before implementation, Codex fills root architecture/product roadmaps, the feature list, scope, domains, user flows and user guide. After every change, it updates affected documentation, flows and tests, runs checks and records synchronization. Gates reject stale tracked content; reviewing accuracy remains Codex's responsibility.
+> Use engineering-workflow to add CSV export to the existing orders screen. Preserve current filters and permissions. Inspect existing export utilities before adding a dependency. Map the affected feature, callers and tests. Propose criteria for exported columns, filtered results, empty states and unauthorized access, then ask for scope approval.
 
-## Product structure during implementation
+**Expected result:** a feature-specific plan that fits the existing architecture, identifies relevant dependencies and verifies the approved behavior.
 
-Use the [product map guide](product-map.md) to initialize PRODUCT.md and PRODUCT.json in the product root, then register features. Each feature has scope, policies, component/test links, dependencies and a version history. Codex maintains these alongside implementation. New v6 tasks require root planning readiness, current synchronization, this map and featureIds at implementation completion. Existing v1/v2 tasks keep their original behavior.
+**Impact:** reduces the chance of overlooking shared callers, permissions or stale user documentation. The declared feature map helps navigation; the agent must still inspect real imports and behavior.
 
-## Start and inspect a task yourself
+### 3. Fix a reproducible bug
 
-Run commands from the package root. Paths in these examples are placeholders.
+> Use engineering-workflow to investigate why completing one task marks every task complete. Reproduce the bug first, identify the smallest fix and propose regression criteria. Avoid unrelated refactors. After scope approval, apply the fix, run the regression and relevant existing tests, and report the evidence.
 
-```sh
-node src/cli.js start /absolute/project/path graphs/product-build.v6.json "Build a task tracker"
-```
+**Expected result:** a recorded reproduction, a bounded fix, meaningful regression coverage and actual check results. If the issue cannot be reproduced, the agent should report what it investigated and what information is missing.
 
-The command prints task JSON, including an `id`, the current `node`, and `revision: 0`. Substitute that ID for TASK_ID below. Files are created at:
+**Impact:** connects the change to the observed failure and makes it easier to assess whether the problem was fixed. For a narrow task without product metadata, the runner supports a simpler V2 workflow; ask the agent to explain whether that is appropriate for your project. The skill's full product workflow normally uses V6.
 
-```text
-/absolute/project/path/.engineering/tasks/TASK_ID/
-```
+### 4. Refactor without changing behavior
 
-Save the brief, plan, decisions, review, and validation reports beside `task.json`.
+> Use engineering-workflow to simplify the checkout validation code. Preserve all public behavior, error messages and interfaces. Assess existing abstractions and callers, define behavior-preservation checks, and propose a small refactor scope. Explain which documentation and user flows remain unchanged and why.
 
-```sh
-node src/cli.js status /absolute/project/path/.engineering/tasks/TASK_ID/task.json
-```
+**Expected result:** a justified refactor with compatibility checks and explicit assessments of affected documentation, flows and tests.
 
-Status includes the current revision and `remainingOutcomes`, which reports remaining traversals for the current node's outcomes. It also includes the saved graph, events, and code snapshot. Use the current revision for the next command; do not guess it.
+**Impact:** discourages abstractions without a demonstrated need and gives reviewers a concrete behavior-preservation target. Unchanged documentation needs a reason, not meaningless edits to satisfy a process.
 
-## Record evidence and advance
+### 5. Evaluate an architectural proposal
 
-An advance records finished work. It does not run that work. Save the referenced artifacts before submitting evidence.
+> Assess my proposal to split the application into services using engineering-workflow. Compare it with keeping a modular application. Consider our team size, current bottlenecks, deployment needs and build/operate/maintain/migrate costs. Distinguish measured evidence from assumptions, state uncertainty, and recommend an approach. Do not change application code during this assessment.
 
-For discovery, save `brief.md` in the task directory and create `discovery-evidence.json` there:
+**Expected result:** a reasoned agreement, disagreement or conditional recommendation, realistic alternatives and explicit unknowns. Ask for a planning-only assessment rather than implementation; it should not be reported as a completed implementation task.
 
-```json
-{
-  "summary": "Brief and acceptance criteria recorded",
-  "artifacts": ["brief.md"]
-}
-```
+**Impact:** helps you make an informed decision before committing to an expensive change. Cost records are estimates unless supported by measurements or current sources; the runner does not fetch or certify prices.
 
-Then submit discovery's ready outcome:
+### 6. Resume work in another session
 
-```sh
-node src/cli.js advance /absolute/project/path/.engineering/tasks/TASK_ID/task.json ready 0 @/absolute/project/path/.engineering/tasks/TASK_ID/discovery-evidence.json
-```
+> Resume engineering-workflow for `/absolute/path/to/my-project`. The package is at `/absolute/path/to/plugins`, and the saved task is `/absolute/path/to/my-project/.engineering/tasks/TASK_ID/task.json`. Read the current state, approved brief, design decisions, evidence and affected feature context. Check for changed files or artifacts, summarize the remaining work, then continue within the approved scope. Do not repeat completed external actions.
 
-The `@` prefix tells the CLI to read a JSON evidence file. Artifact paths resolve relative to the task directory. Always use outcomes declared for the current node.
+**Expected result:** a status summary grounded in saved state and a continuation from the current stage. If the implementation or approved artifacts changed, the agent should explain the required repair or replanning route.
 
-### Scope approval
+**Impact:** reduces reliance on remembered chat history. It does not automatically restore your coding agent's conversation or resolve changes made outside the workflow.
 
-After the user has actually approved the scope, save their response in `approval.md` and prepare evidence such as:
+### 7. Change the scope during implementation
 
-```json
-{
-  "summary": "User approved brief version 1",
-  "artifacts": ["brief.md", "approval.md"],
-  "approval": {
-    "decision": "approved",
-    "scope": "Brief version 1: create, complete, and delete tasks",
-    "response": "Approved: build the three actions in brief version 1."
-  }
-}
-```
+> Add recurring tasks to the current request. Before implementing that change, explain its impact on storage, user flows, tests and the delivery plan. Save a revised brief and use the workflow's replanning route. Present the revised scope and criteria for approval.
 
-Use `approved` with the current revision. Copy the real response; the example is not an approval. Approval-type nodes require a matching decision, a scope, and the actual response, including when recording rejection or clarification.
+**Expected result:** a revised proposal and a new approval decision before implementing the material scope change.
 
-### Implementation completion
+**Impact:** preserves a clear boundary between the originally approved work and the new request. Existing implementation may need revision; prior approvals are not automatically transferred.
 
-Save implementation notes and list the relevant files relative to the project root:
+### 8. Review progress or hand off the task
 
-```json
-{
-  "summary": "Implemented the approved task actions",
-  "artifacts": ["implementation.md"],
-  "featureIds": ["tasks"],
-  "codeFiles": ["src/tasks.js", "tests/tasks.test.js", "package.json"]
-}
-```
+> Give me the engineering-workflow status: approved scope, current stage, delivered behavior, remaining work, review findings, actual tests run, unverified criteria and blockers. Include the task location and affected feature documents. Separate observed results from estimates.
 
-Use `completed` while at implementation. For v3–v6, first register and mark the tasks feature implemented, with real component and unit-test paths, and refresh the product index. The runner hashes these files. Include all files needed to assess the change, including relevant callers and configuration. Paths must identify readable files within the project. For removed files, document the deletion in an artifact; the current snapshot mechanism cannot hash a deleted path.
+**Expected result:** a useful handoff with evidence locations and an honest account of unfinished or unverified work.
 
-Review evidence requires a summary and artifacts, such as `review.md`. A review pass rechecks the implementation's declared files.
+**Impact:** makes progress assessable without reading every internal record. The runner tracks state and evidence; it does not automatically measure active work time, costs or productivity gains.
 
-### Validation completion
+### 9. Stop or replace a task
 
-Run the checks first and save their output. Then record criterion evidence:
+> Cancel the current engineering-workflow task and record that this feature is no longer needed. Explain which application changes already exist and what follow-up would be required if we want to revert them.
 
-```json
-{
-  "summary": "Approved behavior verified",
-  "artifacts": ["validation.md"],
-  "criteria": [
-    {
-      "id": "C1",
-      "status": "verified",
-      "command": "npm test",
-      "result": "Task create, complete, and delete tests passed"
-    }
-  ]
-}
-```
+Or:
 
-Use `passed` while at validation only when all approved criteria have evidence. Include a record for each criterion; the example shows one. Failed or unsupported criteria should be documented and routed to `failed` or `blocked` as appropriate. The runner rejects a validation pass containing a criterion with a status other than verified.
+> Start a replacement engineering-workflow task for the revised objective, link the old task, and propose a fresh scope. Do not carry over the old approval as approval of the new work.
 
-## Resume, repair, or stop
+**Expected result:** an ended task or a linked replacement with a fresh scope. Cancellation records the decision; it does not undo application changes or external actions.
 
-### Resume in a new session
+## How this changes the work
 
-Give the assistant the package location and task.json path. Ask it to read status and referenced artifacts, check the code against the saved work, and continue from the current node. External actions already completed must not be repeated.
+| Capability | Practical effect | Limit or cost |
+| --- | --- | --- |
+| Scope and acceptance criteria | Makes the requested outcome explicit before implementation | You need to review and decide the scope |
+| Reasoned design comparisons | Makes important tradeoffs visible | Requires investigation; unknown costs remain unknown |
+| Reuse and small slices | Encourages focused implementation and earlier feedback | Does not guarantee faster delivery |
+| Product and feature context | Provides navigation and declared change impact | Metadata must be maintained and checked against real code |
+| Documentation/flow/test synchronization | Detects stale records after tracked changes | Content freshness does not prove semantic correctness |
+| Review and criterion validation | Provides evidence you can inspect | A single-agent review is a self-review; field checks cannot prove execution |
+| Saved state and content snapshots | Supports resume and detects changed recorded content | External edits may require repair, synchronization or renewed approval |
+| Bounded repair attempts | Gives repeated failures a stopping point | Some tasks need a revised approach or replacement task |
 
-### Handle review or validation findings
+There is no guaranteed 10× speedup. To assess impact in your own team, compare similar work using verified outcomes, repair cycles, handoff effort and measured time. Ask the agent to record only measurements it can actually observe.
 
-Record findings and use `changes_required` from review or `failed` from validation. Complete the repair and submit new implementation evidence before passing subsequent checks. If declared code files changed since implementation, a pass is rejected until the implementation snapshot is refreshed through that route.
+## What the agent adds to your project
 
-The default graph allows three implementation completion submissions in total, including the first. Repair admission checks prevent returning to implementation once those submissions are used. The instructional policy also says to stop after two unsuccessful repair attempts; the host must follow that policy even if a graph edge still has capacity.
+For full product work, expect root product planning and navigation files, a `features/` metadata directory and local task records under `.engineering/tasks/`. Application code can stay in its existing layout; it does not need to move into the metadata directory.
 
-### Cancel
+Ask before first use if you need a clear inventory:
 
-Read status, then use its revision:
+> Explain which workflow files you intend to add, how they fit our current documentation and which records belong in source control. Preserve our application layout and existing documents. Report naming conflicts before initializing metadata.
 
-```sh
-node src/cli.js cancel /absolute/project/path/.engineering/tasks/TASK_ID/task.json 5 "Feature is no longer needed"
-```
+Product metadata can be committed with the change. Task evidence can remain local under your team's data policy. The runner keeps its own data locally; your coding agent host's processing and retention behavior are separate.
 
-Cancellation records an event and moves the task to the unsuccessful terminal, `blocked`. It does not undo project changes or external actions. The revision 5 is illustrative.
+Keep approved briefs immutable and save revisions as new artifacts. Generated test output should go under the task directory so it does not unintentionally change the implementation snapshot. Your agent handles these details, but they explain why an otherwise valid task may need to return for repair.
 
-### Create a replacement task
+## What to expect at completion
 
-Blocked and completed tasks cannot advance. Start a new task and link the old task as the final argument:
+Ask for a result you can assess:
 
-```sh
-node src/cli.js start /absolute/project/path graphs/product-build.v6.json "Revised task tracker scope" /absolute/project/path/.engineering/tasks/OLD_TASK_ID/task.json
-```
+> Show what changed against the approved criteria, the actual verification commands and results, any remaining limitations, and how to use the new behavior. Include the saved task path and updated feature documentation. State whether the review was independent or a self-review.
 
-This records a superseding link; it does not cancel the old task or carry over its approvals and results. Cancel an active old task separately if needed. Explain the relationship in the new brief.
+A useful completion report describes delivered behavior, actual verification, material limitations and where to find the records. If a required check could not run, expect a blocker or an unverified criterion, not an inferred pass. Feature history records describe a change; they do not publish or deploy it.
 
-## Troubleshooting
+Deployment, publishing, messaging and destructive actions still depend on your authorization and the coding agent's permissions. Scope approval is not a substitute for those permissions.
 
-| Message or situation | Action |
+## Troubleshooting through your agent
+
+| Situation | What to ask |
 | --- | --- |
-| Stale revision | Read status and check what changed before resubmitting with the current revision |
-| Task is locked | Let the active writer finish; if it has exited, use recovery below |
-| Structured evidence requires summary and artifacts | Supply a JSON evidence file with a nonempty summary and artifact list |
-| Missing artifact / ENOENT | Check the artifact path and save the file before advancing |
-| Approval requires matching decision, scope and actual response | Record the real decision with the exact transition outcome |
-| Code changed since implementation | Return through repair routing and record a fresh implementation snapshot |
-| No implementation submissions remain | Stop work; cancel or create a superseding task |
-| Task already terminated | Inspect the final record; start a linked replacement if more work is needed |
+| Agent cannot find the workflow | “Read the skill at this path and verify access to the full package root.” |
+| Agent is editing before scope is agreed | “Present the saved scope and criteria and record my decision before implementation.” |
+| Workflow is locked after an interruption | “Inspect the writer ownership. Use the supported task or product recovery only after confirming the writer exited.” |
+| Files changed after review or implementation | “Explain the drift and use the repair route to refresh checks and evidence.” |
+| Approved brief changed | “Use a revised brief and renewed approval, or restore the approved artifact.” |
+| Product documents or tests are out of sync | “Inspect affected and downstream features, update or justify unchanged records, run checks and refresh synchronization.” |
+| A test or criterion cannot be verified | “State what is unverified and what is needed; do not record a pass.” |
+| Repair attempts are exhausted | “Summarize the blocker and recommend a revised approach or replacement task.” |
+| Terminal task needs more work | “Start a linked replacement task with a fresh scope.” |
 
-To recover a lock left by an exited writer:
+Do not ask the agent to bypass a check merely to reach “complete.” Resolve the underlying mismatch or revise the scope openly.
 
-```sh
-node src/cli.js recover /absolute/project/path/.engineering/tasks/TASK_ID/task.json
-```
+## When to use a lighter approach
 
-Recovery validates the task, backs up task.json, and removes a lock only when its recorded local writer is no longer running. It refuses active writers, foreign-host locks, and incomplete ownership metadata. Those cases require manual inspection. A stale `.recover` mutex also requires manual inspection before another recovery attempt. Retain the reported backup until you have verified the task can resume.
+This workflow is most useful for meaningful features, cross-cutting changes, uncertain designs and work that spans sessions. A tiny copy edit or disposable experiment may not justify a full product map and repeated evidence records. Agree on the appropriate workflow before starting; avoid silently dropping required stages once a task is active.
 
-## Current limits and data handling
+Planning-only discussions can stop at a recommendation. Implementation tasks need their review and validation records before completion.
 
-Task files and artifacts stay in the target project's `.engineering/tasks` directory. The runner has no hosted backend or model API. Your assistant host may process the files you give it according to that host's behavior. If keeping task data out of Git is desired, add `.engineering/` to the target project's ignore file; the runner does not do this automatically.
+## Technical reference for maintainers
 
-Use trusted local graphs and task files. The checksum detects accidental graph changes and is not an authentication mechanism. Locks and revision checks protect local updates; they do not create a multi-user security boundary. Atomic replacement protects readers, but full power-loss durability is not guaranteed.
-
-Artifact checks establish readability, not truth or immutability. Approval fields do not authenticate the user or automatically bind approval to a brief's contents. Code checks cover declared file contents, not the whole repository, undeclared files, or file permissions. Validation checks require verified records, but do not execute commands or enforce a complete list of approved criteria. The host is responsible for these judgments and for honoring permissions.
-
-Existing v1 tasks remain supported with their original free-text evidence behavior. New product tasks should use v6; existing task graphs are not silently migrated.
-
-## Further reading
-
-- [Workflow and evidence contract](workflow.md)
-- [Architecture and persistence](architecture.md)
-- [Policy ownership](policy-guide.md)
-- [Extending the graph](extension-guide.md)
-- [Roadmap](roadmap.md)
-
-For the complete local verification suite, run `npm run check`. It discovers all graph JSON files automatically. CI runs this check on Node 22 and 24.
-
-Use `node src/cli.js --help` to list commands. Invalid argument counts and malformed revisions fail before any mutation. For a product operation interrupted by a crashed local writer, run `node src/cli.js product-recover /absolute/project/path`. Recovery refuses active writers and retains a backup of the undo journal.
-
-New structured tasks require `approval.criteriaIds`, for example `["C1", "C2"]`. Keep approved artifacts immutable and store new revisions under distinct names. Status reports changed historical artifacts. Keep generated check output under the task's `.engineering` directory; new tasks snapshot the remaining project tree at implementation completion.
+Most users can let the coding agent manage the runner. For direct operation, use CLI help, the [workflow contracts](workflow.md), [product lifecycle](product-lifecycle.md) and [product map](product-map.md). Read [architecture](architecture.md) for persistence details and [graph extensions](extension-guide.md) when changing the package.
