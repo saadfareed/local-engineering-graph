@@ -8,7 +8,7 @@ Next: choose a host and add verified native packaging, host-specific dispatch an
 
 Later: connector adapters for GitHub, Linear and Jira; parallel workers with isolated branches and integration checks; token accounting when supported. A hosted service is optional if independent background execution becomes necessary.
 
-Acceptance demo: use the skill to build a small task tracker, save an approved brief, implement one vertical slice, review the diff, validate criterion evidence and resume in a fresh session. This end-to-end agent demo has not yet been executed.
+Acceptance verification: `tests/acceptance.test.js` builds a small in-memory task tracker through the V2 CLI workflow, executes real criterion tests, resumes persisted state in fresh processes, detects an external edit, repairs and completes the task with immutable evidence. It uses synthetic approval and scripted self-review, which are explicitly labelled test data. A live host conversation with real user approval and a fresh chat session remains a separate host integration demo; the automated acceptance test does not claim to certify it.
 
 Implemented in v0.3: root product index, feature scopes and policies, component/test mappings, dependency and impact checks, per-feature version records, and v3 task integration. Future: import-aware dependency discovery, richer criterion-to-test mappings, and full repository revision binding.
 

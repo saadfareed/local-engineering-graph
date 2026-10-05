@@ -2,7 +2,7 @@
 
 Local Engineering Graph gives your coding agent a structured way to plan, implement, review and verify software work, while keeping a record you can resume later. You describe the goal in chat, decide the scope, and inspect the results. The agent manages the workflow files and runner commands.
 
-This manual is for people using the workflow through a coding agent. It covers version 0.7.0 and includes prompts you can adapt to your own project.
+This manual is for people using the workflow through a coding agent. It covers version 0.7.1 and includes prompts you can adapt to your own project.
 
 ## What is available today
 

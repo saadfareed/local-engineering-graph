@@ -1,4 +1,4 @@
-import {mkdir,readFile,writeFile,rename,open,unlink,stat,readdir,realpath} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,open,unlink,stat,readdir,realpath,lstat,readlink} from 'node:fs/promises';
 import {resolve,join,dirname,relative,isAbsolute} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {hostname} from 'node:os';
@@ -21,6 +21,7 @@ export async function readTask(file){
   if(!t||typeof t!=='object'||!t.graph||typeof t.graph!=='object')throw Error('Unsupported or corrupted task');
   if(![1,2,3].includes(t.schemaVersion)||digest(t.graph)!==t.graphHash||!t.graph.nodes[t.node]||!Number.isInteger(t.revision)||t.revision<0||!Array.isArray(t.events)||!t.traversals)throw Error('Unsupported or corrupted task');
   validateGraph(t.graph);
+  if(t.projectSnapshotVersion!==undefined&&![1,2].includes(t.projectSnapshotVersion))throw Error('Unsupported project snapshot version');
   validateHistory(t);
   return t;
 }
@@ -71,15 +72,23 @@ async function verifyApproval(file,t) {
   if (t.schemaVersion!==3 || !t.approvedScope) return;
   if (digest(await artifactSnapshot(file,Object.keys(t.approvedScope.artifacts)))!==digest(t.approvedScope.artifacts)) throw Error('Approved artifacts changed; replan before implementation or passing');
 }
-async function projectSnapshot(root) {
+async function projectSnapshot(root,version=2) {
   const result=Object.create(null);
   const excluded=new Set(['.git','.engineering','node_modules','.product-map.lock','.product-map.recover']);
+  const metadataAndDependencies=new Set(['.git','node_modules']);
   async function walk(directory) {
     for (const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))) {
-      if (excluded.has(entry.name)) continue;
+      const skip=version===1?excluded.has(entry.name):metadataAndDependencies.has(entry.name)||(directory===root&&excluded.has(entry.name));
+      if (skip) continue;
       const full=join(directory,entry.name),path=relative(root,full);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile()||entry.isSymbolicLink()) result[path]=digest(await safeFile(root,path));
+      if (entry.isDirectory()) {
+        if(version===2)result[path]=digest({type:'directory',mode:(await lstat(full)).mode&0o7777});
+        await walk(full);
+      }
+      else if (entry.isFile()||entry.isSymbolicLink()) {
+        const content=digest(await safeFile(root,path));
+        result[path]=version===1?content:digest({type:entry.isSymbolicLink()?'symlink':'file',mode:(await lstat(full)).mode&0o7777,...(entry.isSymbolicLink()?{target:await readlink(full)}:{}),content});
+      }
       else throw Error(`Unsupported snapshot entry: ${path}`);
     }
   }
@@ -117,7 +126,7 @@ export async function recover(file){
 }
 async function snapshots(root,paths,strict=true){
   if(!Array.isArray(paths)||!paths.length)throw Error('Code files required');
-  const result=Object.create(null);for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel.startsWith('..')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(strict?await safeFile(root,p):await readFile(full));}return result;
+  const result=Object.create(null);for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel==='..'||rel.startsWith('../')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(strict?await safeFile(root,p):await readFile(full));}return result;
 }
 async function checkEvidence(file,t,outcome,e){
   if(t.graph.evidenceMode!=='structured'){if(typeof e!=='string'||!e.trim())throw Error('Evidence or decision required');return;}
@@ -150,13 +159,16 @@ async function checkEvidence(file,t,outcome,e){
       t.featureIds=e.featureIds;
     }
     t.code=await snapshots(t.root,files,t.schemaVersion===3);
-    if(t.schemaVersion===3) t.projectSnapshot=await projectSnapshot(t.root);
+    if(t.schemaVersion===3) {
+      t.projectSnapshot=await projectSnapshot(t.root);
+      t.projectSnapshotVersion=2;
+    }
   }
   if(t.graph.productMap&&['reviewer','validator'].includes(role)&&outcome==='passed')await checkProduct(t.root);
   if(['reviewer','validator'].includes(role)&&['passed','changes_required','failed'].includes(outcome)){
     if(!t.code)throw Error('Implementation code snapshot required');
     if(outcome==='passed'&&digest(await snapshots(t.root,Object.keys(t.code),t.schemaVersion===3))!==digest(t.code))throw Error('Code changed since implementation; return to implementation before passing');
-    if(outcome==='passed'&&t.schemaVersion===3&&digest(await projectSnapshot(t.root))!==digest(t.projectSnapshot)) throw Error('Code changed in project since implementation; return to implementation before passing');
+    if(outcome==='passed'&&t.schemaVersion===3&&digest(await projectSnapshot(t.root,t.projectSnapshotVersion??1))!==digest(t.projectSnapshot)) throw Error('Code changed in project since implementation; return to implementation before passing');
     if(role==='validator'&&outcome==='passed'&&(!Array.isArray(e.criteria)||!e.criteria.length||e.criteria.some(c=>!c.id||c.status!=='verified'||typeof c.command!=='string'||!c.command.trim()||typeof c.result!=='string'||!c.result.trim())))throw Error('Validation requires verified criteria with commands and results');
     if(role==='validator'&&outcome==='passed'&&t.schemaVersion===3) {
       const ids=e.criteria.map(c=>c.id),required=t.approvedScope?.criteriaIds;
@@ -175,7 +187,7 @@ export async function advance(file,{outcome,evidence,expectedRevision}){
     if(outcome!=='replan'&&(t.graph.nodes[edge.to].role==='worker'||outcome==='passed')) await verifyApproval(file,t);
     evidence=structuredClone(evidence);
     await checkEvidence(file,t,outcome,evidence);
-    if(outcome==='replan'){t.code=null;delete t.approvedScope;delete t.projectSnapshot;delete t.featureIds;delete t.engineeringPlan;delete t.engineering;}
+    if(outcome==='replan'){t.code=null;delete t.approvedScope;delete t.projectSnapshot;delete t.projectSnapshotVersion;delete t.featureIds;delete t.engineeringPlan;delete t.engineering;}
     t.traversals[key(edge)]=(t.traversals[key(edge)]??0)+1;
     t.events.push({revision:t.revision+1,node:t.node,outcome,evidence,time:new Date().toISOString()});t.node=edge.to;t.revision++;
   });
@@ -190,4 +202,15 @@ export async function status(file){
     try { current=digest(await safeFile(dirname(file),path)); } catch { current=null; }
     if(current!==expected)changedArtifacts.push({revision:event.revision,path});
   }
-  return {...t,evidenceIntegrity:{checked:t.schemaVersion===3,changedArtifacts},remainingOutcomes:Object.fromEntries(t.graph.edges.filter(e=>e.from===t.node).map(e=>[e.outcome,remaining(t,e)]))};}
+  const codeIntegrity={checked:!!t.code,changedFiles:[]};
+  if(t.code)for(const [path,expected] of Object.entries(t.code)) {
+    let current;
+    try {current=(await snapshots(t.root,[path],t.schemaVersion===3))[path];} catch {current=null;}
+    if(current!==expected)codeIntegrity.changedFiles.push(path);
+  }
+  const projectIntegrity={checked:t.schemaVersion===3&&!!t.projectSnapshot,changedPaths:[],error:null};
+  if(projectIntegrity.checked)try {
+    const current=await projectSnapshot(t.root,t.projectSnapshotVersion??1);
+    projectIntegrity.changedPaths=[...new Set([...Object.keys(t.projectSnapshot),...Object.keys(current)])].sort().filter(path=>t.projectSnapshot[path]!==current[path]);
+  } catch(e) {projectIntegrity.error=e.message;}
+  return {...t,evidenceIntegrity:{checked:t.schemaVersion===3&&t.graph.evidenceMode==='structured',changedArtifacts},codeIntegrity,projectIntegrity,remainingOutcomes:Object.fromEntries(t.graph.edges.filter(e=>e.from===t.node).map(e=>[e.outcome,remaining(t,e)]))};}
