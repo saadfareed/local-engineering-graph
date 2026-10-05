@@ -47,7 +47,7 @@ test('C3: deletes only the selected task', () => { const t=createTracker(); cons
 `);
   let checkNumber=0,checkArtifact;
   const verify=async()=>{
-   const {stdout,stderr}=await run(process.execPath,['--test','tracker.test.mjs'],{cwd:root,env});
+   const {stdout,stderr}=await run(process.execPath,['--test','--test-reporter=tap','tracker.test.mjs'],{cwd:root,env});
    assert.match(stdout,/# fail 0/);checkArtifact=`test-output-${++checkNumber}.txt`;await writeFile(join(dir,checkArtifact),stdout+stderr);return stdout;
   };
   const output=await verify();
@@ -62,7 +62,7 @@ test('C3: deletes only the selected task', () => { const t=createTracker(); cons
   await advance('changes_required');await verify();await advance('completed',implementation());
   await writeFile(join(dir,'review.md'),'Scripted self-review: scope has three operations, no external side effects; criterion tests cover target isolation and missing IDs. This is not independent review.');
   await advance('passed',{artifacts:['brief.md','review.md',checkArtifact]});
-  await advance('passed',{artifacts:['brief.md','review.md',checkArtifact],criteria:['C1','C2','C3'].map(id=>({id,status:'verified',command:'node --test tracker.test.mjs',result:`Actual subprocess exited 0; all criterion tests passed. See ${checkArtifact}.`}))});
+  await advance('passed',{artifacts:['brief.md','review.md',checkArtifact],criteria:['C1','C2','C3'].map(id=>({id,status:'verified',command:'node --test --test-reporter=tap tracker.test.mjs',result:`Actual subprocess exited 0; all criterion tests passed. See ${checkArtifact}.`}))});
   const completed=await command('status',file);assert.equal(completed.node,'complete');
   assert.equal(completed.revision,9);assert.deepEqual(completed.evidenceIntegrity.changedArtifacts,[]);
   assert.deepEqual(completed.projectIntegrity.changedPaths,[]);assert.equal(completed.projectIntegrity.error,null);
