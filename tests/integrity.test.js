@@ -109,3 +109,12 @@ test('approval requires criterion IDs and code snapshots reject escaping symlink
   await assert.rejects(step('completed',{codeFiles:['escape.js']}),/escapes/);
  } finally {await rm(outside,{recursive:true,force:true});}
 }));
+test('code snapshots allow in-project names starting with two dots and reject parent traversal',()=>fixture(async({root,step})=>{
+ await writeFile(join(root,'..config.js'),'in-project');
+ for(const outcome of ['ready','approved','ready','allowed'])await step(outcome);
+ await assert.rejects(step('completed',{codeFiles:['../outside.js']}),/escapes project/);
+ await step('completed',{codeFiles:['..config.js']});
+ await step('passed');
+ await writeFile(join(root,'..config.js'),'changed');
+ await assert.rejects(step('passed',{criteria:[]}),/Code changed/);
+}));

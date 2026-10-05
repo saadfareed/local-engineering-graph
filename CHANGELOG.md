@@ -49,6 +49,8 @@ Added v6 reasoned proposal assessments and design analyses with options, pros/co
 
 ### User documentation and examples
 
+Historical intermediate work: the demos, evidence templates and runner manual described here were subsequently removed in the Cleanup entry below. They are not included in the current repository.
+
 - Rewrite the user manual for version 0.7.0 with setup, all CLI commands, approval/criterion contracts, product lifecycle, repair and recovery instructions.
 - Add a working in-memory task tracker, criterion tests and a complete V2 walkthrough with editable evidence files.
 - Add V6 proposal, design, implementation, review, synchronization and release templates.

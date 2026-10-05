@@ -117,7 +117,7 @@ export async function recover(file){
 }
 async function snapshots(root,paths,strict=true){
   if(!Array.isArray(paths)||!paths.length)throw Error('Code files required');
-  const result=Object.create(null);for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel.startsWith('..')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(strict?await safeFile(root,p):await readFile(full));}return result;
+  const result=Object.create(null);for(const p of paths){if(typeof p!=='string'||!p)throw Error('Invalid code path');const full=resolve(root,p),rel=relative(root,full);if(rel==='..'||rel.startsWith('../')||isAbsolute(rel))throw Error('Code path escapes project');result[p]=digest(strict?await safeFile(root,p):await readFile(full));}return result;
 }
 async function checkEvidence(file,t,outcome,e){
   if(t.graph.evidenceMode!=='structured'){if(typeof e!=='string'||!e.trim())throw Error('Evidence or decision required');return;}
