@@ -67,3 +67,13 @@ Historical intermediate work: the demos, evidence templates and runner manual de
 - Remove standalone developer demos, evidence templates and the redundant runner manual; retain agent-facing prompt examples and technical contracts.
 - Remove duplicate product rollback cleanup and unused CLI test-output collection.
 - Correct the skill reference to use V6 for new product work and refresh documentation links.
+
+## 0.7.1
+
+- Merge the separate main/master histories to bring the latest implementation into the default branch.
+- Correct declared-code containment checks to allow valid in-project filenames beginning with two dots.
+- Report current declared-code and project drift in status, including snapshot scan errors and accurate check availability.
+- Track file types, permission modes, empty directories and internal symlink targets in version-2 project snapshots; limit workflow runtime exclusions to the project root.
+- Preserve existing unversioned schema-3 snapshot comparisons until implementation resubmission, and reject unsupported snapshot versions.
+- Add regression coverage and a real subprocess-driven task-tracker acceptance test with repair, resume, criterion execution and immutable evidence.
+- Clarify historical removed resources, current snapshot behavior, and remaining host integration boundaries; inspect both Node.js CI matrix jobs.

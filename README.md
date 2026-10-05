@@ -24,7 +24,7 @@ node src/cli.js feature-add /absolute/project/path booking "Appointment booking"
 
 This creates a root feature index plus feature scope, policies and version history. Populate root scope, domains, architecture/product roadmaps, flows and user documentation before implementation; record product-ready. Map actual components/unit tests and record feature-sync after each change before implementation completion. See the [product lifecycle guide](docs/product-lifecycle.md). Use product-sync, product-check and feature-context to maintain and navigate the graph.
 
-Start creates a UUID task directory in the selected project. Each advance requires its current revision and structured evidence in v2–v6. New tasks bind approval artifacts and criterion IDs, report evidence drift, and check the project file tree (see docs/workflow.md). This is a manual host-driven workflow, not an autonomous agent runtime.
+Start creates a UUID task directory in the selected project. Each advance requires its current revision and structured evidence in v2–v6. New structured tasks bind approval artifacts and criterion IDs. Status reports artifact, declared-code and project drift; new implementation snapshots also track permissions, directories and symlink targets (see docs/workflow.md for exclusions and compatibility). This is a manual host-driven workflow, not an autonomous agent runtime.
 
 Load skills/engineering-workflow/SKILL.md in your host, or copy its folder into your host's supported skill location and preserve access to this package's root. Native installation must be adapted after choosing the host. Nothing is installed globally by this repository.
 
