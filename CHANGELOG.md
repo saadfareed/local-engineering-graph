@@ -77,3 +77,12 @@ Historical intermediate work: the demos, evidence templates and runner manual de
 - Preserve existing unversioned schema-3 snapshot comparisons until implementation resubmission, and reject unsupported snapshot versions.
 - Add regression coverage and a real subprocess-driven task-tracker acceptance test with repair, resume, criterion execution and immutable evidence.
 - Clarify historical removed resources, current snapshot behavior, and remaining host integration boundaries; inspect both Node.js CI matrix jobs.
+
+## 0.8.0
+
+- Add the backward-compatible V7 workflow with explicit user approval of the completed plan.
+- Require runnable planning, implementation and review feedback protocols with recorded environments.
+- Require isolated sandbox setup, start, readiness, focused checks and shutdown evidence before implementation completion.
+- Add contract-first backend/consumer planning with versioned demo output, provider checks, per-consumer verification and sandbox end-to-end evidence.
+- Add regression validation for incomplete integration coverage and incomplete sandbox evidence.
+- Keep 10× productivity as a measured target based on feedback latency, rework and verified delivery rather than an unsupported claim.

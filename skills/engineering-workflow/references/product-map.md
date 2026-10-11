@@ -1,6 +1,6 @@
 # Product implementation map
 
-Read docs/product-lifecycle.md for preparation and per-change synchronization, then docs/product-map.md from the package root for command syntax, manifest fields, and version evidence. Use graphs/product-build.v6.json for new product tasks; existing task graphs remain pinned.
+Read docs/product-lifecycle.md for preparation and per-change synchronization, then docs/product-map.md from the package root for command syntax, manifest fields, and version evidence. Use graphs/product-build.v7.json for new product tasks; existing task graphs remain pinned.
 
 At planning, create and populate root architecture/product roadmaps, scope, domain definitions, feature list, user flows and user guide. Record domain IDs in the registry and feature assignments. Save planning evidence and run product-ready before entering implementation. At planning, initialize the target's product map if absent and register the scoped features. Translate the approved plan into feature scopes with stable acceptance criterion IDs. Record product architecture and shared policies, feature rules, component ownership and public contracts. Preserve existing project layout; src/features/<id> is an example, not a required refactor.
 

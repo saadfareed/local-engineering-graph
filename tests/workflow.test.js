@@ -10,6 +10,10 @@ test('rejects unhandled outcomes, unbounded edges and approval bypass',()=>{
  for(const mutate of [g=>g.nodes.discovery.outcomes.push('unknown'),g=>delete g.edges[0].maxTraversals,g=>g.edges.find(e=>e.from==='discovery'&&e.outcome==='ready').to='planning']){
  const g=structuredClone(graph);mutate(g);assert.throws(()=>validateGraph(g));}
 });
+test('rejects malformed productivity protocol flag',()=>{
+ const g=structuredClone(graph);g.productivityProtocols='false';
+ assert.throws(()=>validateGraph(g),/Invalid productivity protocols setting/);
+});
 test('task resumes, pins graph, rejects stale updates and reaches completion',async()=>{
  const root=await mkdtemp(join(tmpdir(),'engineering-test-'));
  try{

@@ -4,7 +4,7 @@ Implemented: local graph validation, pinned task state, revision checks, locking
 
 Implemented in v0.2: local lock recovery with backups, cancellation, superseding links, structured evidence records, declared code-file snapshot checks, renewed approval on replanning, and retry admission checks.
 
-Next: choose a host and add verified native packaging, host-specific dispatch and preview lifecycle. Add migration tooling and host-executed check attestation before unattended execution. Schema 3 now binds approval scope and criterion sets and snapshots the project file tree.
+Next: choose a host and add verified native packaging, host-specific dispatch and preview lifecycle. Add task-schema migration tooling and host-backed approval authentication before unattended execution. Product schema-1 to schema-2 migration now has a dry-run CLI. Schema 3 binds approval scope and criterion sets and snapshots the project file tree.
 
 Later: connector adapters for GitHub, Linear and Jira; parallel workers with isolated branches and integration checks; token accounting when supported. A hosted service is optional if independent background execution becomes necessary.
 

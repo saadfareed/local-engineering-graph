@@ -4,6 +4,8 @@ Produce scoped steps, dependencies, affected domains, and acceptance-check mappi
 
 Return one declared graph outcome with supporting evidence. Read only relevant project context. Host restrictions always apply.
 
+For V7, read `docs/productivity-protocols.md`. Record planningProtocol with the inspection/lint/debug commands used, execution environment and delivery surfaces. If a backend serves frontend, mobile, desktop or another service, define the versioned integration-contract path, format, version, demo-output command, validation command and every consumer. Present the completed plan and acceptance criteria for explicit user confirmation; planning work is not implementation authorization.
+
 Identify affected feature IDs and dependency contracts. Register planned features and map their approved scope and acceptance criteria using docs/product-map.md. Preserve the target project's existing architecture.
 
 Create and populate the root product scope, domains, architecture roadmap, product roadmap, feature list, user flows and initial user guide before implementation. Map feature/domain/flow/criterion IDs and record planning readiness with product-ready.

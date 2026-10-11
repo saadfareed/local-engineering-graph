@@ -11,3 +11,5 @@ Check that user flows and documentation describe current behavior and tests cove
 For a v5 pass, record engineeringReview for every current decision and evidence for simplicity, boundaries, testability, performance, scope and reuse. Assess pattern suitability and abstraction cost. Require actual evidence for optimization or productivity claims.
 
 Review whether option comparisons and recommendations match project evidence, user priorities and observed implementation. Flag unsupported estimates, ignored drawbacks and inconsistent choices. Use the recorded informed user decision as the implementation scope.
+
+For V7, record reviewProtocol with actual diff, static-analysis, contract-compatibility and focused regression commands appropriate to the change. Check that sandbox evidence proves startup/readiness and cleanup in the stated environment. For multi-surface work, reject independently invented response models, missing consumer checks, unversioned demo output or material contract drift that lacks replanning and renewed approval.

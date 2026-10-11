@@ -51,3 +51,41 @@ export function validateProposalAssessment(assessments){
 export function validateCriticalPlanning(plan){
   validateEngineeringPlan(plan);for(const decision of plan.decisions){validateDecisionAnalysis(decision.analysis);if(decision.analysis.id!==decision.id)throw Error('Design decision analysis ID must match its decision');}return plan;
 }
+
+function commandChecks(values,label){
+  if(!Array.isArray(values)||!values.length||values.some(v=>!v||!text(v.purpose)||!text(v.command)))throw Error(`${label} requires purpose and command entries`);
+}
+export function validatePlanningProtocol(record){
+  if(!record||!text(record.environment)||!text(record.summary))throw Error('Planning protocol requires environment and summary');
+  commandChecks(record.checks,'Planning protocol checks');
+  const surfaces=new Set(['backend','frontend','mobile','desktop','service','cli','library','worker']);
+  if(!Array.isArray(record.deliverySurfaces)||!record.deliverySurfaces.length||record.deliverySurfaces.some(v=>!surfaces.has(v))||new Set(record.deliverySurfaces).size!==record.deliverySurfaces.length)throw Error('Planning protocol requires distinct supported delivery surfaces');
+  const backend=record.deliverySurfaces.includes('backend');
+  const consumers=record.deliverySurfaces.filter(v=>v==='frontend'||v==='mobile'||v==='desktop'||v==='service');
+  if(backend&&consumers.length){
+    const c=record.integrationContract;
+    if(!c||!text(c.path)||!text(c.format)||!text(c.version)||!text(c.demoCommand)||!text(c.validationCommand))throw Error('Backend plus consumer planning requires a versioned integration contract and demo/validation commands');
+    if(!Array.isArray(c.consumers)||consumers.some(v=>!c.consumers.includes(v)))throw Error('Integration contract must cover every declared consumer surface');
+  }
+  return record;
+}
+export function validateSandboxExecution(record){
+  if(!record||!text(record.environment)||!text(record.isolation)||!text(record.setupCommand)||!text(record.startCommand)||!text(record.healthCommand)||!text(record.healthResult)||!text(record.shutdownCommand))throw Error('Implementation requires sandbox setup, start, health result, isolation and shutdown evidence');
+  commandChecks(record.checks,'Sandbox checks');
+  if(!Array.isArray(record.substitutions)||record.substitutions.some(v=>!text(v)))throw Error('Sandbox substitutions must be recorded (an empty array is allowed)');
+  return record;
+}
+export function validateContractVerification(plan,record){
+  const protocol=validatePlanningProtocol(plan);
+  if(!protocol.integrationContract)return record;
+  if(!record||record.contractVersion!==protocol.integrationContract.version||typeof record.contractHash!=='string'||!/^[0-9a-f]{64}$/.test(record.contractHash))throw Error('Implementation must verify the approved integration contract version and SHA-256 hash');
+  commandChecks(record.providerChecks,'Contract verification provider checks');
+  if(!Array.isArray(record.consumerChecks)||protocol.integrationContract.consumers.some(surface=>!record.consumerChecks.some(v=>v?.surface===surface&&text(v.command)&&text(v.result))))throw Error('Contract verification requires a command and result for every consumer');
+  if(!record.sandboxEndToEnd||!['passed','blocked'].includes(record.sandboxEndToEnd.status)||!text(record.sandboxEndToEnd.command)||!text(record.sandboxEndToEnd.result))throw Error('Contract verification requires a sandbox end-to-end result or explicit blocker');
+  if(record.sandboxEndToEnd.status==='blocked')throw Error('Blocked sandbox end-to-end verification cannot complete implementation; use a blocked outcome');
+  return record;
+}
+export function validateReviewProtocol(record){
+  if(!record||!text(record.environment)||!text(record.summary))throw Error('Review protocol requires environment and summary');
+  commandChecks(record.checks,'Review protocol checks');return record;
+}
