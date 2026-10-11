@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,writeFile,mkdir,symlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {initProduct,addFeature,checkProduct,syncProduct,featureContext,releaseFeature,syncFeature} from '../src/product.js';
+import {initProduct,migrateProduct,addFeature,checkProduct,syncProduct,featureContext,releaseFeature,syncFeature} from '../src/product.js';
 import {createTask,advance,readTask} from '../src/state.js';
 async function fixture(fn){const root=await mkdtemp(join(tmpdir(),'product-map-'));try{await initProduct(root,'Booking app');const registry=JSON.parse(await readFile(join(root,'PRODUCT.json')));registry.domains=[{id:'product',description:'Application domain'}];await writeFile(join(root,'PRODUCT.json'),JSON.stringify(registry));await syncProduct(root);await fn(root);}finally{await rm(root,{recursive:true,force:true});}}
 async function edit(root,id,change){const path=join(root,'features',id,'feature.json');const f=JSON.parse(await readFile(path));change(f);await writeFile(path,JSON.stringify(f,null,2));}
@@ -13,6 +13,22 @@ test('initialization and feature creation preserve existing files and index link
  await addFeature(root,'booking','Book appointments');await assert.rejects(addFeature(root,'booking','Duplicate'),/already registered/);assert.equal((await checkProduct(root)).features,1);
  const index=await readFile(join(root,'PRODUCT.md'),'utf8');assert.match(index,/features\/booking\/SCOPE.md/);
  await edit(root,'booking',f=>f.title='Changed title');await assert.rejects(checkProduct(root),/stale/);await syncProduct(root);await checkProduct(root);
+}));
+test('schema 1 migration previews, preserves documents and creates a draft schema 2 map',()=>fixture(async root=>{
+ await addFeature(root,'booking','Booking');
+ const productPath=join(root,'PRODUCT.json'),featurePath=join(root,'features/booking/feature.json');
+ const product=JSON.parse(await readFile(productPath));product.schemaVersion=1;delete product.documents;delete product.domains;delete product.preparation;await writeFile(productPath,JSON.stringify(product));
+ const feature=JSON.parse(await readFile(featurePath));delete feature.domainIds;delete feature.documentation;delete feature.userFlows;await writeFile(featurePath,JSON.stringify(feature));
+ await writeFile(join(root,'features/booking/README.md'),'Existing guide');
+ const record={domains:[{id:'appointments',description:'Booking domain'}],featureDomains:{booking:['appointments']}};
+ assert.equal((await migrateProduct(root,{...record,dryRun:true})).dryRun,true);
+ assert.equal(JSON.parse(await readFile(productPath)).schemaVersion,1);
+ await assert.rejects(migrateProduct(root,{...record,featureDomains:{}}),/every feature/);
+ await migrateProduct(root,record);
+ assert.equal(JSON.parse(await readFile(productPath)).preparation.status,'draft');
+ assert.deepEqual(JSON.parse(await readFile(featurePath)).domainIds,['appointments']);
+ assert.equal(await readFile(join(root,'features/booking/README.md'),'utf8'),'Existing guide');
+ await checkProduct(root,{requireSync:false});
 }));
 test('dependency graph provides transitive impact and rejects cycles and missing links',()=>fixture(async root=>{
  for(const id of ['accounts','booking','reminders'])await implemented(root,id);

@@ -1,6 +1,6 @@
 # Plan first, keep every change synchronized
 
-For new product work, use product-build.v6.json. V6 adds [reasoned planning and cost comparison](critical-planning.md). V5 includes the v4 lifecycle gates plus [engineering quality evidence](engineering-quality.md). Before the first implementation, the assistant creates and fills the product's root planning documents. During implementation, it maintains code, documentation, user flows and associated tests together.
+For new product work, use product-build.v7.json. V7 adds [stage feedback, sandbox execution and contract-first integration](productivity-protocols.md), including explicit approval of the completed plan. V6 adds [reasoned planning and cost comparison](critical-planning.md). V5 includes the v4 lifecycle gates plus [engineering quality evidence](engineering-quality.md). Before the first implementation, the assistant creates and fills the product's root planning documents. During implementation, it maintains code, documentation, user flows and associated tests together.
 
 ## Root documents
 
@@ -121,4 +121,10 @@ After task completion, use feature-release to append version changes and preserv
 
 Existing task graphs and schema-1 product maps are not silently migrated. V1–v3 remain available. Product schema 2 enables the new documents and synchronization checks; v4 additionally gates initial implementation on planning readiness.
 
-To adopt an existing schema-1 map, back it up, add the missing root and feature documents without overwriting existing content, and update the registry to schemaVersion 2 with documents, domains and preparation: {"status":"draft"}. The documents mapping must contain scope, architectureRoadmap, roadmap, domains, userFlows, documentation and features keys pointing to the corresponding files in the table above. Add domainIds, documentation and userFlows to each feature manifest. Preserve features, components, tests and history. Populate the plan, then run product-sync, product-ready and feature-sync for implemented features. There is no automatic migration command.
+To adopt an existing schema-1 map, back it up and create a migration record assigning every feature to at least one defined domain:
+
+```json
+{"domains":[{"id":"appointments","description":"Booking domain"}],"featureDomains":{"booking":["appointments"]},"dryRun":true}
+```
+
+Run `node src/cli.js product-migrate ROOT RECORD_JSON` first with `dryRun: true`. Review its plan, set `dryRun` to false and rerun. The transaction preserves existing root and feature documents, components, tests and history; it creates missing documents, upgrades manifests and the registry, then refreshes generated indexes. Preparation remains `draft`. Populate the plan, run `product-ready`, and synchronize implemented features before using a V7 task. Existing task graphs remain pinned and are not migrated.

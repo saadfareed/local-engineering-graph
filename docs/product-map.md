@@ -119,10 +119,10 @@ The result contains:
 
 Use those links to retrieve targeted context. Read the downstream contracts when changing a public interface and run affected tests as appropriate. The graph is declared metadata; undeclared source dependencies will not appear. Reviewers must compare it against real imports and callers.
 
-## Use the v6 implementation workflow
+## Use the v7 implementation workflow
 
 ```sh
-node src/cli.js start /absolute/product/path graphs/product-build.v6.json "Implement appointment booking"
+node src/cli.js start /absolute/product/path graphs/product-build.v7.json "Implement appointment booking"
 ```
 
 Initialize the product map and register the planned features before completing implementation. Existing scope approval still applies. At implementation completion, include featureIds in the normal structured evidence:
@@ -140,7 +140,7 @@ Each named feature must be registered and marked implemented with mapped compone
 
 During planning, identify the task's affected features and acceptance criteria. During implementation, update code and map documents together. Review architecture and policies along with the diff. During validation, run mapped unit tests and relevant downstream checks, and verify every approved acceptance criterion. Scope changes use replan and renewed approval; a map is not a substitute for that decision.
 
-V1 and v2 tasks remain compatible and do not require a product map. New skill-led product implementations use v6, with root planning readiness and documentation/flow/test synchronization.
+V1 and v2 tasks remain compatible and do not require a product map. New skill-led product implementations use v7, with root planning readiness, plan approval, stage checks and documentation/flow/test synchronization.
 
 ## Record what changed in a feature version
 

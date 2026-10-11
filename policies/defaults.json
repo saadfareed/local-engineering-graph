@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "rules": [
     {
       "id": "scope-approval",
@@ -50,6 +50,26 @@
       "id": "reasoned-planning",
       "enforcement": "instructional",
       "rule": "Assess material proposals independently; explain stance, compare realistic options and lifecycle costs, mark uncertainty, and honor informed authorized user decisions."
+    },
+    {
+      "id": "stage-feedback",
+      "enforcement": "runner",
+      "rule": "V7 planning, implementation and review transitions require runnable test/debug protocols and recorded environments."
+    },
+    {
+      "id": "approved-plan",
+      "enforcement": "runner",
+      "rule": "V7 requires explicit user confirmation of the completed plan and acceptance criteria before domain review and implementation."
+    },
+    {
+      "id": "sandbox-execution",
+      "enforcement": "runner",
+      "rule": "V7 implementation evidence records isolated setup, start, readiness, focused checks and shutdown; unavailable execution remains an explicit blocker, not a pass."
+    },
+    {
+      "id": "contract-first-integration",
+      "enforcement": "runner",
+      "rule": "When a backend serves frontend, mobile, desktop or service consumers, V7 requires a versioned contract, deterministic demo output, provider checks and per-consumer verification."
     }
   ]
 }

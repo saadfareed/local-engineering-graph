@@ -43,6 +43,16 @@ test('complete criterion coverage and undeclared project files are checked',()=>
  await assert.rejects(step('passed',{criteria:[criterion('C1'),criterion('C1')]}),/every approved criterion/);
  await step('passed',{criteria:[criterion('C2'),criterion('C1')]});
 }));
+test('project snapshots use immutable sidecar files and detect corruption',()=>fixture(async({file,step})=>{
+ for(const outcome of ['ready','approved','ready','allowed','completed'])await step(outcome);
+ const raw=JSON.parse(await readFile(file,'utf8'));
+ assert.equal(raw.projectSnapshot,undefined);
+ assert.match(raw.projectSnapshotRef,/^[a-f0-9]{64}$/);
+ assert.ok((await readTask(file)).projectSnapshot['app.js']);
+ const snapshotFile=join(file,'..',`project-snapshot-${raw.projectSnapshotRef}.json`);
+ await writeFile(snapshotFile,'{}');
+ await assert.rejects(readTask(file),/Corrupted project snapshot data/);
+}));
 test('task artifacts reject traversal and escaping symlinks',()=>fixture(async({root,file,task,step})=>{
  await assert.rejects(step('ready',{artifacts:['../../../app.js']}),/escapes/);
  await symlink(join(root,'app.js'),join(root,'.engineering/tasks',task.id,'outside.js'));

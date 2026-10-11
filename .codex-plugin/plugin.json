@@ -1,0 +1,9 @@
+{
+  "name": "local-engineering-graph",
+  "version": "0.8.0",
+  "description": "Plan, build, review and validate software using a persisted local engineering workflow and product feature graph.",
+  "author": {
+    "name": "Local Engineering Graph"
+  },
+  "skills": "./skills/"
+}

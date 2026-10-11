@@ -1,6 +1,6 @@
 # Design quality and productive implementation
 
-Use product-build.v6.json for new skill-led product work. V6 adds [critical planning](critical-planning.md) and decision/cost comparisons to the v5 contract below. It adds recorded engineering decisions and review checks to v4's planning, feature mapping and synchronization gates.
+Use product-build.v7.json for new skill-led product work. V7 adds stage checks and plan approval; V6 adds [critical planning](critical-planning.md) and decision/cost comparisons to the v5 contract below. It adds recorded engineering decisions and review checks to v4's planning, feature mapping and synchronization gates.
 
 The goal is faster delivery of verified user value through reuse, clear boundaries, smaller changes and less rework. A 10× improvement is an aspiration that needs a measured baseline; the package does not guarantee or report that speedup automatically.
 

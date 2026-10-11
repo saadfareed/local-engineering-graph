@@ -5,11 +5,19 @@ export function validateGraph(g) {
   if (g.criticalPlanning && !g.engineeringQuality) throw Error('Critical planning requires engineering quality');
   if (g.engineeringQuality !== undefined && typeof g.engineeringQuality !== 'boolean') throw Error('Invalid engineering quality setting');
   if (g.engineeringQuality && g.evidenceMode !== 'structured') throw Error('Engineering quality requires structured evidence');
+  if (g.productivityProtocols !== undefined && typeof g.productivityProtocols !== 'boolean') throw Error('Invalid productivity protocols setting');
+  if (g.productivityProtocols && g.evidenceMode !== 'structured') throw Error('Productivity protocols require structured evidence');
   if (g.productPreparation !== undefined && typeof g.productPreparation !== 'boolean') throw Error('Invalid product preparation setting');
   if (g.productPreparation && !g.productMap) throw Error('Product preparation requires product map');
   if (g.productMap !== undefined && typeof g.productMap !== 'boolean') throw Error('Invalid product map setting');
   if (g.productMap && g.evidenceMode !== 'structured') throw Error('Product map requires structured evidence');
   if (!Array.isArray(g.requiredGates??[]) || new Set(g.requiredGates??[]).size!==(g.requiredGates??[]).length) throw Error('Invalid required gates');
+  const outgoing=new Map();
+  for(const edge of g.edges){
+    if(!edge||typeof edge!=='object')throw Error('Invalid edge');
+    if(!outgoing.has(edge.from))outgoing.set(edge.from,[]);
+    outgoing.get(edge.from).push(edge);
+  }
   if (!Object.values(g.nodes).some(n=>n?.type==='terminal'&&n.success===true)) throw Error('Successful terminal required');
   if (!g.nodes[g.start]) throw Error('Missing start node');
   for (const [id,n] of Object.entries(g.nodes)) {
@@ -24,13 +32,14 @@ export function validateGraph(g) {
     if (n.type === 'terminal' && n.outcomes.length) throw Error('Terminal has outcomes');
     if (n.type !== 'terminal' && !n.outcomes.length) throw Error('Nonterminal needs outcomes');
     if (n.submissionOutcome !== undefined && !n.outcomes.includes(n.submissionOutcome)) throw Error(`Invalid submission outcome: ${id}`);
-    for (const outcome of n.outcomes) if (g.edges.filter(e=>e.from===id && e.outcome===outcome).length!==1) throw Error(`Outcome must have exactly one edge: ${id}.${outcome}`);
+    for (const outcome of n.outcomes) if ((outgoing.get(id)??[]).filter(e=>e.outcome===outcome).length!==1) throw Error(`Outcome must have exactly one edge: ${id}.${outcome}`);
   }
   for (const e of g.edges) {
     if (!g.nodes[e.from] || !g.nodes[e.to] || !g.nodes[e.from].outcomes.includes(e.outcome)) throw Error('Invalid edge');
     if (!Number.isInteger(e.maxTraversals) || e.maxTraversals<1) throw Error('Every edge needs a positive traversal budget');
   }
-  const visited=new Set(); const walk=id=>{if(visited.has(id))return;visited.add(id);g.edges.filter(e=>e.from===id).forEach(e=>walk(e.to));};walk(g.start);
+  const visited=new Set(),pending=[g.start];
+  while(pending.length){const id=pending.pop();if(visited.has(id))continue;visited.add(id);for(const edge of outgoing.get(id)??[])pending.push(edge.to);}
   if(visited.size!==Object.keys(g.nodes).length) throw Error('Unreachable node');
   const terminating=new Set(Object.keys(g.nodes).filter(id=>g.nodes[id].type==='terminal'));
   let changed=true;
@@ -39,7 +48,8 @@ export function validateGraph(g) {
   // Required gates must dominate every successful terminal.
   for(const gate of g.requiredGates ?? []) {
     if(!g.nodes[gate])throw Error('Unknown gate');
-    const seen=new Set(); const bypass=id=>{if(id===gate || seen.has(id))return;seen.add(id);if(g.nodes[id].success)throw Error(`Success bypasses gate: ${gate}`);g.edges.filter(e=>e.from===id).forEach(e=>bypass(e.to));};bypass(g.start);
+    const seen=new Set(),stack=[g.start];
+    while(stack.length){const id=stack.pop();if(id===gate||seen.has(id))continue;seen.add(id);if(g.nodes[id].success)throw Error(`Success bypasses gate: ${gate}`);for(const edge of outgoing.get(id)??[])stack.push(edge.to);}
   }
   if(g.evidenceMode==='structured') {
     const contracts=[['worker','completed'],['reviewer','passed'],['validator','passed'],['user','approved']];
@@ -50,12 +60,12 @@ export function validateGraph(g) {
       const matching=Object.entries(g.nodes).filter(([,n])=>n.role===role&&n.outcomes.includes(outcome));
       if(!matching.length)throw Error(`Required evidence contract missing: ${role}.${outcome}`);
       const seen=new Set();
-      const walk=id=>{
-        if(seen.has(id))return;seen.add(id);
+      const stack=[g.start];
+      while(stack.length){
+        const id=stack.pop();if(seen.has(id))continue;seen.add(id);
         if(g.nodes[id].success)throw Error(`Success bypasses evidence contract: ${role}.${outcome}`);
-        for(const edge of g.edges.filter(e=>e.from===id))if(!(g.nodes[id].role===role&&edge.outcome===outcome))walk(edge.to);
-      };
-      walk(g.start);
+        for(const edge of outgoing.get(id)??[])if(!(g.nodes[id].role===role&&edge.outcome===outcome))stack.push(edge.to);
+      }
     }
     for(const [id,n] of Object.entries(g.nodes)) {
       if(['worker','reviewer','validator','planner','supreme-coordinator','domain-coordinator'].includes(n.role)&&n.type!=='agent')throw Error(`Evidence role requires agent node: ${id}`);

@@ -6,7 +6,9 @@ This manual is for people using the workflow through a coding agent. It covers v
 
 ## What is available today
 
-The repository currently provides an **agent skill and local workflow runner**. It does not yet include a native plugin manifest, marketplace installer or automatic agent dispatcher. You can use it through a coding agent that can read the skill, access your local project, and run Node.js commands. A host-specific plugin installation must be added or configured separately.
+The repository provides a **skill-based Codex plugin and local workflow runner**, with its manifest at `.codex-plugin/plugin.json`. It does not expose MCP tools or include an automatic agent dispatcher. Codex uses the packaged skill and shell commands to persist workflow records. It needs access to your local project and Node.js 22 or later.
+
+For Codex installation or ZIP upload, include the manifest, `skills/`, `src/`, `graphs/`, `agents/`, `docs/` and `policies/` together. A ZIP must retain the hidden `.codex-plugin/` directory. Re-upload/reinstall an updated package and start a new session; editing this checkout does not update an already uploaded snapshot. Invoke `local-engineering-graph` or its `engineering-workflow` skill in the target project. No MCP connection is needed for this local workflow.
 
 You do not need to operate the CLI or write evidence JSON yourself when your agent can do those tasks. The agent needs access to the complete package, including its graphs, role instructions and documentation; copying only the skill text is insufficient.
 
@@ -89,7 +91,7 @@ The graph advances only when the agent submits valid records. It cannot judge wh
 
 **Expected result:** a recorded reproduction, a bounded fix, meaningful regression coverage and actual check results. If the issue cannot be reproduced, the agent should report what it investigated and what information is missing.
 
-**Impact:** connects the change to the observed failure and makes it easier to assess whether the problem was fixed. For a narrow task without product metadata, the runner supports a simpler V2 workflow; ask the agent to explain whether that is appropriate for your project. The skill's full product workflow normally uses V6.
+**Impact:** connects the change to the observed failure and makes it easier to assess whether the problem was fixed. For a narrow task without product metadata, the runner supports a simpler V2 workflow; ask the agent to explain whether that is appropriate for your project. The skill's full product workflow normally uses V7.
 
 ### 4. Refactor without changing behavior
 

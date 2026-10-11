@@ -1,6 +1,6 @@
 # Reasoned planning and cost comparison
 
-New skill-led tasks use product-build.v6.json. V6 adds proposal and design comparisons to the v5 engineering workflow. Codex should help you choose a suitable solution by evaluating your proposal, rather than automatically endorsing it.
+New skill-led tasks use product-build.v7.json. V6 adds proposal and design comparisons to the v5 engineering workflow. Codex should help you choose a suitable solution by evaluating your proposal, rather than automatically endorsing it.
 
 ## What you receive
 

@@ -190,6 +190,47 @@ export async function initProduct(root,name){
     return {root,index:join(root,'PRODUCT.md'),registry:join(root,'PRODUCT.json')};
   });
 }
+export async function migrateProduct(root,record){
+  root=resolve(root);
+  return locked(root,async()=>{
+    const model=await loadProduct(root);
+    if(model.product.schemaVersion!==1)throw Error('Only schema 1 product maps can be migrated');
+    if(!record||!Array.isArray(record.domains)||!record.domains.length||!record.featureDomains||typeof record.featureDomains!=='object')throw Error('Migration requires domains and featureDomains');
+    const domainIds=new Set();
+    for(const domain of record.domains){
+      if(!domain||typeof domain.id!=='string'||!slug.test(domain.id)||domainIds.has(domain.id)||!nonempty(domain.description))throw Error('Invalid migration domain');
+      domainIds.add(domain.id);
+    }
+    if(Object.keys(record.featureDomains).length!==model.features.size)throw Error('Migration must map every feature');
+    for(const id of model.features.keys()){
+      const ids=record.featureDomains[id];distinctStrings(ids,`domains for ${id}`);
+      if(!ids.length||ids.some(domain=>!domainIds.has(domain)))throw Error(`Unknown or missing migration domain for ${id}`);
+    }
+    const documents=Object.fromEntries([...Object.entries(documentTemplates).map(([key,value])=>[key,value[0]]),['features','FEATURES.md']]);
+    const generated=join(root,documents.features);
+    try{const contents=await readFile(generated,'utf8');if(!contents.startsWith('# Feature list\n'))throw Error('Existing FEATURES.md is not a generated feature index');}catch(error){if(error.code!=='ENOENT')throw error;}
+    if(record.dryRun===true)return {dryRun:true,features:[...model.features.keys()],domains:[...domainIds],documents};
+    async function ensureFile(path,contents){
+      const full=local(root,path);
+      try{await lstat(full);await file(root,path);return;}
+      catch(error){if(error.code!=='ENOENT')throw error;}
+      await journalPath(full);await writeFile(full,contents,{flag:'wx'});
+    }
+    for(const [path,title,instructions] of Object.values(documentTemplates))await ensureFile(path,`# ${title}\n\n${instructions}\n`);
+    for(const feature of model.features.values()){
+      const documentation=join(feature.directory,'README.md'),userFlows=join(feature.directory,'USER-FLOWS.md');
+      await ensureFile(documentation,`# ${feature.title}\n\nDocument actual use, limitations and setup.\n`);
+      await ensureFile(userFlows,`# ${feature.title}: user flows\n\nRecord stable flow IDs and tested success/error paths.\n`);
+      const manifest={...feature};delete manifest.directory;delete manifest.history;delete manifest.manifestPath;
+      manifest.domainIds=record.featureDomains[feature.id];manifest.documentation=documentation;manifest.userFlows=userFlows;
+      await atomic(join(root,feature.manifestPath),json(manifest));
+    }
+    model.product.schemaVersion=2;model.product.domains=record.domains;model.product.documents=documents;model.product.preparation={status:'draft'};
+    await atomic(join(root,'PRODUCT.json'),json(model.product));
+    await writeIndexes(await loadProduct(root));
+    return {migrated:true,features:model.features.size,domains:domainIds.size,preparation:'draft'};
+  });
+}
 export async function addFeature(root,id,title){
   root=resolve(root);if(typeof id!=='string'||!slug.test(id)||!nonempty(title))throw Error('Feature needs a lowercase kebab-case ID and title');
   return locked(root,async()=>{
@@ -210,23 +251,33 @@ export async function addFeature(root,id,title){
   });
 }
 export async function syncProduct(root){root=resolve(root);return locked(root,async()=>{const model=await loadProduct(root);await writeIndexes(model);return {features:model.features.size,index:join(root,'PRODUCT.md')};});}
-function featureList(model){return '# Feature list\n\n'+index(model).slice(index(model).indexOf('| Feature |'));}
+function featureList(model){const generated=index(model);return '# Feature list\n\n'+generated.slice(generated.indexOf('| Feature |'));}
 async function destination(root,path){const full=local(root,path),base=await realpath(root),parent=await realpath(dirname(full)),rel=relative(base,parent);if(rel==='..'||rel.startsWith('../')||isAbsolute(rel))throw Error(`Generated file parent escapes project: ${path}`);return full;}
 async function writeIndexes(model){await atomic(join(model.root,'PRODUCT.md'),index(model));if(model.product.schemaVersion===2)await atomic(await destination(model.root,model.product.documents.features),featureList(model));}
-async function snapshotPaths(root,paths){const snapshot=Object.create(null);for(const path of new Set(paths))snapshot[path]=hash(await file(root,path));return snapshot;}
+async function snapshotPaths(root,paths,cache){
+  const snapshot=Object.create(null);
+  for(const path of new Set(paths)){
+    if(!cache?.has(path)){
+      const value=hash(await file(root,path));
+      cache?.set(path,value);
+      snapshot[path]=value;
+    }else snapshot[path]=cache.get(path);
+  }
+  return snapshot;
+}
 function featurePaths(m,f){
   const upstream=new Set();const visit=id=>{for(const dep of m.features.get(id).dependsOn)if(!upstream.has(dep)){upstream.add(dep);visit(dep);}};visit(f.id);
   const mapped=[f,...[...upstream].map(id=>m.features.get(id))];
   return [...(m.product.schemaVersion===2?['PRODUCT.json']:[]),m.product.policies,m.product.architecture,...manualDocuments(m.product),...mapped.flatMap(feature=>[feature.manifestPath,feature.scope,feature.policies,...(m.product.schemaVersion===2?[feature.documentation,feature.userFlows]:[]),...feature.components.map(c=>c.path),...feature.tests.map(t=>t.path)])];
 }
 function testResults(f,results){if(!Array.isArray(results)||f.tests.some(t=>!results.some(r=>r.id===t.id&&r.status==='passed'&&r.command===t.command&&nonempty(r.result))))throw Error('Record passing results for every mapped test');}
-export async function checkFeatureSync(root,id,model){
+export async function checkFeatureSync(root,id,model,cache){
   const m=model??await loadProduct(root),f=m.features.get(id);if(!f)throw Error('Unknown feature');
   if(m.product.schemaVersion!==2)return {valid:true,legacy:true};
   let record;try{record=await readJSON(m.root,join(f.directory,'synchronization.json'));}catch(e){if(e.code==='ENOENT')throw Error(`Feature ${id} is out of sync; run feature-sync with review and test evidence`);throw e;}
-  const current=await snapshotPaths(m.root,featurePaths(m,f));
+  const current=await snapshotPaths(m.root,featurePaths(m,f),cache);
   if(JSON.stringify(current)!==JSON.stringify(record.snapshot))throw Error(`Feature ${id} is out of sync; review documents, flows and tests, then run feature-sync`);
-  if(record.featureId!==id||record.schemaVersion!==1||!Array.isArray(record.artifacts)||JSON.stringify(await snapshotPaths(m.root,record.artifacts))!==JSON.stringify(record.artifactSnapshot))throw Error(`Feature ${id} validation evidence changed; run feature-sync again`);
+  if(record.featureId!==id||record.schemaVersion!==1||!Array.isArray(record.artifacts)||JSON.stringify(await snapshotPaths(m.root,record.artifacts,cache))!==JSON.stringify(record.artifactSnapshot))throw Error(`Feature ${id} validation evidence changed; run feature-sync again`);
   testResults(f,record.tests);validateAssessments(record.assessments);return {valid:true,featureId:id};
 }
 function validateAssessments(assessments){for(const key of ['documentation','userFlows','unitTests'])if(!assessments?.[key]||!['updated','unchanged'].includes(assessments[key].status)||!nonempty(assessments[key].reason))throw Error(`Synchronization requires ${key} assessment with status and reason`);}
@@ -263,7 +314,7 @@ export async function checkProductPrepared(root){
 }
 export async function checkProduct(root,{requireSync=true}={}){
   const m=await loadProduct(root);const current=await readFile(join(m.root,'PRODUCT.md'),'utf8');if(current!==index(m))throw Error('PRODUCT.md is stale; run product-sync');
-  if(m.product.schemaVersion===2){if(await file(m.root,m.product.documents.features).then(b=>b.toString())!==featureList(m))throw Error('Feature list is stale; run product-sync');if(requireSync)for(const f of m.features.values())if(f.status==='implemented')await checkFeatureSync(m.root,f.id,m);}
+  if(m.product.schemaVersion===2){if(await file(m.root,m.product.documents.features).then(b=>b.toString())!==featureList(m))throw Error('Feature list is stale; run product-sync');if(requireSync){const cache=new Map();for(const f of m.features.values())if(f.status==='implemented')await checkFeatureSync(m.root,f.id,m,cache);}}
   return {valid:true,features:m.features.size,components:m.components.size,tests:[...m.features.values()].reduce((n,f)=>n+f.tests.length,0)};
 }
 export async function featureContext(root,id){
