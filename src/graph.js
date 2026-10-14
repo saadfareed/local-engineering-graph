@@ -11,6 +11,8 @@ export function validateGraph(g) {
   if (g.productPreparation && !g.productMap) throw Error('Product preparation requires product map');
   if (g.productMap !== undefined && typeof g.productMap !== 'boolean') throw Error('Invalid product map setting');
   if (g.productMap && g.evidenceMode !== 'structured') throw Error('Product map requires structured evidence');
+  if (g.parallelWorkers !== undefined && typeof g.parallelWorkers !== 'boolean') throw Error('Invalid parallel workers setting');
+  if (g.parallelWorkers && g.evidenceMode !== 'structured') throw Error('Parallel workers require structured evidence');
   if (!Array.isArray(g.requiredGates??[]) || new Set(g.requiredGates??[]).size!==(g.requiredGates??[]).length) throw Error('Invalid required gates');
   const outgoing=new Map();
   for(const edge of g.edges){
@@ -52,7 +54,7 @@ export function validateGraph(g) {
     while(stack.length){const id=stack.pop();if(id===gate||seen.has(id))continue;seen.add(id);if(g.nodes[id].success)throw Error(`Success bypasses gate: ${gate}`);for(const edge of outgoing.get(id)??[])stack.push(edge.to);}
   }
   if(g.evidenceMode==='structured') {
-    const contracts=[['worker','completed'],['reviewer','passed'],['validator','passed'],['user','approved']];
+    const contracts=g.parallelWorkers?[['integration-coordinator','integrated'],...(Object.values(g.nodes).some(n=>n.role==='user')?[['user','approved']]:[])]:[['worker','completed'],['reviewer','passed'],['validator','passed'],['user','approved']];
     if(g.engineeringQuality)contracts.push(['planner','ready']);
     if(g.criticalPlanning)contracts.push(['supreme-coordinator','ready']);
     if(g.productPreparation)contracts.push(['domain-coordinator','allowed']);
@@ -68,7 +70,7 @@ export function validateGraph(g) {
       }
     }
     for(const [id,n] of Object.entries(g.nodes)) {
-      if(['worker','reviewer','validator','planner','supreme-coordinator','domain-coordinator'].includes(n.role)&&n.type!=='agent')throw Error(`Evidence role requires agent node: ${id}`);
+      if(['worker','reviewer','validator','planner','supreme-coordinator','domain-coordinator','integration-coordinator'].includes(n.role)&&n.type!=='agent')throw Error(`Evidence role requires agent node: ${id}`);
     }
   }
   return g;

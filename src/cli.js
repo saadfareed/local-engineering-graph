@@ -3,14 +3,16 @@ import {validateGraph} from './graph.js';
 import {createTask,readTask,status,advance,recover,cancel} from './state.js';
 import {runCheck} from './checks.js';
 import {initProduct,migrateProduct,addFeature,syncProduct,checkProduct,featureContext,releaseFeature,prepareProduct,syncFeature,recoverProduct} from './product.js';
-const [command,...args]=process.argv.slice(2);
+const [command,...rawArgs]=process.argv.slice(2);
 try {
- let result;
+ let result,parent;
+ const args=[...rawArgs];
+ if(command==='start'){const i=args.indexOf('--parent');if(i!==-1){if(i+1>=args.length)throw Error('--parent requires a value');parent=args[i+1];args.splice(i,2);}}
  const arities={'product-init':[2,2],'product-migrate':[2,2],'product-ready':[2,2],'feature-sync':[3,3],'feature-add':[3,3],'product-sync':[1,1],'product-check':[1,1],'feature-context':[2,2],'feature-release':[3,3],'product-recover':[1,1],validate:[1,1],start:[3,4],status:[1,1],advance:[4,4],recover:[1,1],cancel:[3,3],'check-run':[2,2]};
  const usage={
   'product-init':'ROOT NAME','product-migrate':'ROOT RECORD_JSON','product-ready':'ROOT RECORD_JSON','feature-sync':'ROOT ID RECORD_JSON','feature-add':'ROOT ID TITLE',
   'product-sync':'ROOT','product-check':'ROOT','feature-context':'ROOT ID','feature-release':'ROOT ID RECORD_JSON','product-recover':'ROOT',
-  validate:'GRAPH',start:'ROOT GRAPH OBJECTIVE [SUPERSEDED_TASK_FILE]',status:'TASK_FILE',advance:'TASK_FILE OUTCOME REVISION EVIDENCE_OR_@JSON_FILE',recover:'TASK_FILE',cancel:'TASK_FILE REVISION REASON','check-run':'TASK_FILE SPEC_JSON'
+  validate:'GRAPH',start:'ROOT GRAPH OBJECTIVE [SUPERSEDED_TASK_FILE] [--parent PARENT_TASK_FILE]',status:'TASK_FILE',advance:'TASK_FILE OUTCOME REVISION EVIDENCE_OR_@JSON_FILE',recover:'TASK_FILE',cancel:'TASK_FILE REVISION REASON','check-run':'TASK_FILE SPEC_JSON'
  };
  if(args.includes('--help')&&usage[command]) {
    console.log(`${command} ${usage[command]}`);process.exit(0);
@@ -35,12 +37,12 @@ try {
  else if(command==='feature-context') result=await featureContext(args[0],args[1]);
  else if(command==='feature-release') result=await releaseFeature(args[0],args[1],JSON.parse(await readFile(args[2],'utf8')));
  else if(command==='validate') result=validateGraph(JSON.parse(await readFile(args[0],'utf8')));
- else if(command==='start') result=await createTask(args[0],JSON.parse(await readFile(args[1],'utf8')),args[2],{supersedes:args[3]});
+ else if(command==='start') result=await createTask(args[0],JSON.parse(await readFile(args[1],'utf8')),args[2],{supersedes:args[3],parent});
  else if(command==='status') result=await status(args[0]);
  else if(command==='check-run') result=await runCheck(args[0],await readTask(args[0]),JSON.parse(await readFile(args[1],'utf8')));
  else if(command==='advance') result=await advance(args[0],{outcome:args[1],expectedRevision:Number(args[2]),evidence:args[3]?.startsWith('@')?JSON.parse(await readFile(args[3].slice(1),'utf8')):args[3]});
  else if(command==='recover') result=await recover(args[0]);
  else if(command==='cancel') result=await cancel(args[0],{expectedRevision:Number(args[1]),reason:args[2]});
- else throw Error('Usage: product-init ROOT NAME | product-ready ROOT RECORD_JSON | feature-sync ROOT ID RECORD_JSON | feature-add ROOT ID TITLE | product-sync ROOT | product-check ROOT | feature-context ROOT ID | feature-release ROOT ID RECORD_JSON | validate GRAPH | start ROOT GRAPH OBJECTIVE [SUPERSEDED_TASK_FILE] | status TASK_FILE | advance TASK_FILE OUTCOME REVISION EVIDENCE_OR_@JSON_FILE | recover TASK_FILE | cancel TASK_FILE REVISION REASON');
+ else throw Error('Usage: product-init ROOT NAME | product-ready ROOT RECORD_JSON | feature-sync ROOT ID RECORD_JSON | feature-add ROOT ID TITLE | product-sync ROOT | product-check ROOT | feature-context ROOT ID | feature-release ROOT ID RECORD_JSON | validate GRAPH | start ROOT GRAPH OBJECTIVE [SUPERSEDED_TASK_FILE] [--parent PARENT_TASK_FILE] | status TASK_FILE | advance TASK_FILE OUTCOME REVISION EVIDENCE_OR_@JSON_FILE | recover TASK_FILE | cancel TASK_FILE REVISION REASON');
  console.log(JSON.stringify(result,null,2));
 } catch(e){console.error(e.message);process.exitCode=1;}

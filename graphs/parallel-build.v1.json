@@ -1,0 +1,65 @@
+{
+  "id": "parallel-build",
+  "version": 1,
+  "start": "dispatch",
+  "requiredGates": [
+    "integration"
+  ],
+  "evidenceMode": "structured",
+  "parallelWorkers": true,
+  "nodes": {
+    "dispatch": {
+      "type": "agent",
+      "role": "supreme-coordinator",
+      "outcomes": [
+        "ready",
+        "blocked"
+      ]
+    },
+    "integration": {
+      "type": "agent",
+      "role": "integration-coordinator",
+      "outcomes": [
+        "integrated",
+        "blocked"
+      ]
+    },
+    "complete": {
+      "type": "terminal",
+      "role": null,
+      "outcomes": [],
+      "success": true
+    },
+    "blocked": {
+      "type": "terminal",
+      "role": null,
+      "outcomes": []
+    }
+  },
+  "edges": [
+    {
+      "from": "dispatch",
+      "outcome": "ready",
+      "to": "integration",
+      "maxTraversals": 3
+    },
+    {
+      "from": "dispatch",
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 1
+    },
+    {
+      "from": "integration",
+      "outcome": "integrated",
+      "to": "complete",
+      "maxTraversals": 1
+    },
+    {
+      "from": "integration",
+      "outcome": "blocked",
+      "to": "blocked",
+      "maxTraversals": 3
+    }
+  ]
+}

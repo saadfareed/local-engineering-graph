@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0
+
+- Added an opt-in, additive `parallelWorkers` boolean to the graph header. It requires `evidenceMode: "structured"` and, on the parent graph, relaxes the four base evidence contracts (`worker.completed`, `reviewer.passed`, `validator.passed`) so a pure dispatch+integration parent validates; `user.approved` is still enforced only when the parent keeps a `role: "user"` approval node. The flag is strictly gated on `parallelWorkers === true`; absent or `false`, graph validation is byte-identical to 0.11.0 (the four base contracts are required exactly as before).
+- Added child `parent` linkage. `createTask` accepts an optional `parent` and stores `parent` as an absolute path, always present (`null` when absent), mirroring `supersedes`. The field is invisible to replay: `validateHistory` never reads or recomputes it. The CLI `start` command gains an optional `--parent PARENT_TASK_FILE` flag alongside the existing `[SUPERSEDED_TASK_FILE]` positional.
+- Added a new `integration-coordinator.integrated` gate (active only under the flag). For each declared child it re-reads the child via `readTask` (inheriting the child's full replay integrity), and asserts the child reached an immutable success terminal, carries recorded `reviewer.passed` and `validator.passed` events, and has a `parent` back-pointer matching the parent task file. It validates branch metadata (`branch`, single shared `mergedInto`, and `baseCommit`/`headCommit`/`mergeCommit` SHAs matching `/^[0-9a-f]{7,40}$/` when present, with `mergeCommit` distinct from `baseCommit`). It runs one MANDATORY combined integration check via the existing `verifyRecordedChecks` and verifies optional `ancestryChecks` the same way when supplied.
+- Branch metadata is RECORDED and consistency-checked only. The plugin never spawns git: branch existence and merge topology remain the host's responsibility, strengthened only when the host supplies passing `ancestryChecks` commands. A convenience `t.integration` field is stored but never recomputed by `validateHistory` (mirroring `t.featureIds`).
+- Added `graphs/parallel-build.v1.json`, a validating parent-graph sketch (dispatch → integration → success terminal) with `requiredGates: ["integration"]`.
+- Backward compatible: no `schemaVersion` bump and no on-disk format break. With the flag off, graph validation, `createTask`/`readTask`/`validateHistory`/`advance`, and all shipped behavior are byte-identical to 0.11.0.
+
 ## 0.11.0
 
 - Added an opt-in reader/writer product-map lock, gated on a new `concurrency: "rw"` field in `PRODUCT.json`. When enabled, the five pure readers (`loadProduct`, `checkProduct`, `checkProductPrepared`, `featureContext`, `checkFeatureSync`) register in a `.product-map.readers/` directory and run concurrently, while mutations stay single-writer.

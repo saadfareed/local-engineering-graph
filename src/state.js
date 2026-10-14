@@ -14,12 +14,13 @@ async function durableWrite(path,content){
   try{await handle.writeFile(content);await handle.sync();}finally{await handle.close();}
 }
 async function syncDirectory(path){const handle=await open(path,'r');try{await handle.sync();}finally{await handle.close();}}
-export async function createTask(root,graph,objective,{supersedes}={}) {
+export async function createTask(root,graph,objective,{supersedes,parent}={}) {
   validateGraph(graph);if(!objective?.trim())throw Error('Objective required');
   if(supersedes)await readTask(supersedes);
+  if(parent)await readTask(parent);
   const id=randomUUID(),dir=join(resolve(root),'.engineering','tasks',id);
   await mkdir(dir,{recursive:true});
-  const task={schemaVersion:3,id,objective,root:resolve(root),supersedes:supersedes?resolve(supersedes):null,graph:structuredClone(graph),graphHash:digest(graph),node:graph.start,revision:0,traversals:{},events:[],code:null};
+  const task={schemaVersion:3,id,objective,root:resolve(root),supersedes:supersedes?resolve(supersedes):null,parent:parent?resolve(parent):null,graph:structuredClone(graph),graphHash:digest(graph),node:graph.start,revision:0,traversals:{},events:[],code:null};
   await durableWrite(join(dir,'task.json'),JSON.stringify(task,null,2));await syncDirectory(dir);return task;
 }
 export async function readTask(file){
@@ -220,6 +221,34 @@ async function checkEvidence(file,t,outcome,e){
   let currentCheckSnapshot;
   const getSnapshot=async()=>currentCheckSnapshot??=await projectSnapshot(t.root);
   if (t.schemaVersion===3) e.artifactSnapshot=await artifactSnapshot(file,e.artifacts);
+  if(t.graph.parallelWorkers&&role==='integration-coordinator'&&outcome==='integrated'){
+    if(!Array.isArray(e.children)||!e.children.length)throw Error('Integration requires a nonempty children array');
+    if(new Set(e.children.map(c=>c?.taskFile)).size!==e.children.length)throw Error('Integration children must be distinct by taskFile');
+    const sha=/^[0-9a-f]{7,40}$/;
+    for(const child of e.children){
+      if(!child||typeof child!=='object')throw Error('Invalid integration child');
+      if(typeof child.taskFile!=='string'||!child.taskFile.trim())throw Error('Integration child requires a taskFile');
+      if(typeof child.branch!=='string'||!child.branch.trim())throw Error('Integration child requires a branch');
+      if(typeof child.mergedInto!=='string'||!child.mergedInto.trim())throw Error('Integration child requires a mergedInto target');
+      for(const field of ['baseCommit','headCommit','mergeCommit'])if(child[field]!==undefined&&!sha.test(child[field]))throw Error(`Integration child has a malformed SHA: ${field}`);
+      if(child.mergeCommit!==undefined&&child.baseCommit!==undefined&&child.mergeCommit===child.baseCommit)throw Error('Integration child mergeCommit must differ from baseCommit');
+    }
+    if(new Set(e.children.map(c=>c.mergedInto)).size!==1)throw Error('Integration children must share a single mergedInto target');
+    for(const child of e.children){
+      if(isAbsolute(child.taskFile))throw Error('Integration child taskFile must be relative to the parent task directory');
+      const childFile=await containedFull(t.root,relative(t.root,resolve(dirname(file),child.taskFile)));
+      const c=await readTask(childFile);
+      if(c.parent!==resolve(file))throw Error('Child parent back-pointer mismatch');
+      const cn=c.graph.nodes[c.node];
+      if(cn.type!=='terminal'||cn.success!==true)throw Error('Child not at success terminal');
+      const passed=r=>c.events.some(ev=>c.graph.nodes[ev.node]?.role===r&&ev.outcome==='passed');
+      if(!passed('reviewer')||!passed('validator'))throw Error('Child missing recorded review/validation pass');
+    }
+    if(!Array.isArray(e.integrationChecks)||!e.integrationChecks.length)throw Error('Integration requires a combined integration check');
+    await verifyRecordedChecks(file,t,e.integrationChecks,getSnapshot);
+    if(e.ancestryChecks!==undefined)await verifyRecordedChecks(file,t,e.ancestryChecks,getSnapshot);
+    t.integration={children:e.children,mergedInto:e.children[0].mergedInto,integratedAt:new Date().toISOString()};
+  }
   if(t.graph.nodes[t.node].type==='approval'){
     if(!e.approval||e.approval.decision!==outcome||typeof e.approval.scope!=='string'||!e.approval.scope.trim()||typeof e.approval.response!=='string'||!e.approval.response.trim())throw Error('Approval requires matching decision, scope and actual response');
   }
