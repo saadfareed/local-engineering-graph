@@ -75,12 +75,32 @@ function validateHistory(t) {
   if(t.schemaVersion===3&&digest(t.approvedPlan??null)!==digest(approvedPlan??null))throw Error('Corrupted plan approval state');
   if (t.schemaVersion===3 && (typeof t.root!=='string'||!isAbsolute(t.root)||typeof t.id!=='string')) throw Error('Invalid task root or ID');
 }
-async function safeFile(root,path) {
+async function containedFull(root,path) {
   if (typeof path!=='string'||!path||isAbsolute(path)) throw Error('Paths must be relative');
   const full=resolve(root,path),base=await realpath(root),actual=await realpath(full),rel=relative(base,actual);
   if (rel==='..'||rel.startsWith('../')||isAbsolute(rel)) throw Error('Path escapes project or task directory');
   if (!(await stat(full)).isFile()) throw Error('Expected file');
-  return readFile(full);
+  return full;
+}
+async function safeFile(root,path) {return readFile(await containedFull(root,path));}
+// Incremental content-hash cache keyed by absolute path + stat (size,mtimeMs). Relies on the
+// "local files are trusted input" boundary (docs/architecture.md): on an honest filesystem any
+// content change moves size or mtimeMs, so any stat change forces a full re-read+re-hash and
+// preserves byte-identical hash outputs. The containment/realpath/isFile validation in
+// containedFull still runs on every walk; only the read+hash of an already-validated path is
+// cached. The Map persists for the life of the process and grows unbounded, a tradeoff that only
+// matters for long-lived processes (CLI invocations are short-lived single processes).
+const hashCache=new Map();
+export const __snapshotCacheStats={hashes:0,hits:0};
+async function cachedFileHash(root,path,size,mtimeMs,symlink) {
+  const full=await containedFull(root,path);
+  // Symlinks are never cached: safeFile reads the resolved target's content, but an lstat reports
+  // the link's own size+mtime which does not change when the target changes, so a stat-keyed cache
+  // would serve a stale hash. Links are rare; always re-read them to preserve identical hashes.
+  if(symlink){__snapshotCacheStats.hashes++;return digest(await readFile(full));}
+  const entry=hashCache.get(full);
+  if(entry&&entry.size===size&&entry.mtimeMs===mtimeMs){__snapshotCacheStats.hits++;return entry.hash;}
+  const hash=digest(await readFile(full));hashCache.set(full,{size,mtimeMs,hash});__snapshotCacheStats.hashes++;return hash;
 }
 async function artifactSnapshot(file,paths) {
   const result=Object.create(null);
@@ -105,9 +125,9 @@ export async function projectSnapshot(root,version=2,codeHashes) {
         await walk(full);
       }
       else if (entry.isFile()||entry.isSymbolicLink()) {
-        const content=digest(await safeFile(root,path));
+        const st=await lstat(full),content=await cachedFileHash(root,path,st.size,st.mtimeMs,entry.isSymbolicLink());
         codeHashes?.set(path,content);
-        result[path]=version===1?content:digest({type:entry.isSymbolicLink()?'symlink':'file',mode:(await lstat(full)).mode&0o7777,...(entry.isSymbolicLink()?{target:await readlink(full)}:{}),content});
+        result[path]=version===1?content:digest({type:entry.isSymbolicLink()?'symlink':'file',mode:st.mode&0o7777,...(entry.isSymbolicLink()?{target:await readlink(full)}:{}),content});
       }
       else throw Error(`Unsupported snapshot entry: ${path}`);
     }
@@ -263,7 +283,7 @@ async function checkEvidence(file,t,outcome,e){
     }
     t.code=await snapshots(t.root,files,t.schemaVersion===3);
     if(t.schemaVersion===3) {
-      t.projectSnapshot=await projectSnapshot(t.root);
+      t.projectSnapshot=await getSnapshot(); // same root, version 2 and tree state as the memoized check snapshot
       t.projectSnapshotVersion=2;
     }
   }

@@ -78,6 +78,13 @@ Historical intermediate work: the demos, evidence templates and runner manual de
 - Add regression coverage and a real subprocess-driven task-tracker acceptance test with repair, resume, criterion execution and immutable evidence.
 - Clarify historical removed resources, current snapshot behavior, and remaining host integration boundaries; inspect both Node.js CI matrix jobs.
 
+## 0.9.0
+
+- Add an incremental content-hash cache for project snapshots, keyed by absolute path plus file size and mtime, so unchanged files are not re-hashed on repeated walks.
+- Reuse a single version-2 project snapshot within worker completion instead of recomputing the same tree state twice.
+- Preserve byte-identical snapshot hashes for versions 1 and 2, all task/graph schemas and on-disk formats; the cache is in-process only.
+- Keep every integrity guarantee: realpath containment, approval, code and project drift detection, historical check drift and pass/review gates fail exactly when they did before. Symlinks are always re-read so their resolved-target content is never served stale.
+
 ## 0.8.0
 
 - Add the backward-compatible V7 workflow with explicit user approval of the completed plan.

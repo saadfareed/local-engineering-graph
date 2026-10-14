@@ -17,3 +17,5 @@ Implemented in v0.4: root product scope/domains/architecture and product roadmap
 Implemented in v0.5: justified design/reuse/slice plans, implementation performance assessment and engineering review evidence. Productivity metrics remain host-recorded; automated timing and comparative baselines are future work.
 
 Implemented in v0.6: independent proposal/design assessments, stance/evidence, option pros/cons/risks and lifecycle cost/basis/confidence records. Validating external quotes and recommendation semantics remains host work.
+
+Implemented in v0.9: incremental project-snapshot performance work — an in-process content-hash cache keyed by path+size+mtime plus per-operation snapshot reuse, with byte-identical hashes and all integrity guarantees preserved. Parallel snapshot hashing across workers remains future work (see the Later item above).
