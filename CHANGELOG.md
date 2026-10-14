@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.12.0
+
+- Added an opt-in, additive `parallelWorkers` boolean to the graph header. It requires `evidenceMode: "structured"` and, on the parent graph, relaxes the four base evidence contracts (`worker.completed`, `reviewer.passed`, `validator.passed`) so a pure dispatch+integration parent validates; `user.approved` is still enforced only when the parent keeps a `role: "user"` approval node. The flag is strictly gated on `parallelWorkers === true`; absent or `false`, graph validation is byte-identical to 0.11.0 (the four base contracts are required exactly as before).
+- Added child `parent` linkage. `createTask` accepts an optional `parent` and stores `parent` as an absolute path, always present (`null` when absent), mirroring `supersedes`. The field is invisible to replay: `validateHistory` never reads or recomputes it. The CLI `start` command gains an optional `--parent PARENT_TASK_FILE` flag alongside the existing `[SUPERSEDED_TASK_FILE]` positional.
+- Added a new `integration-coordinator.integrated` gate (active only under the flag). For each declared child it re-reads the child via `readTask` (inheriting the child's full replay integrity), and asserts the child reached an immutable success terminal, carries recorded `reviewer.passed` and `validator.passed` events, and has a `parent` back-pointer matching the parent task file. It validates branch metadata (`branch`, single shared `mergedInto`, and `baseCommit`/`headCommit`/`mergeCommit` SHAs matching `/^[0-9a-f]{7,40}$/` when present, with `mergeCommit` distinct from `baseCommit`). It runs one MANDATORY combined integration check via the existing `verifyRecordedChecks` and verifies optional `ancestryChecks` the same way when supplied.
+- Branch metadata is RECORDED and consistency-checked only. The plugin never spawns git: branch existence and merge topology remain the host's responsibility, strengthened only when the host supplies passing `ancestryChecks` commands. A convenience `t.integration` field is stored but never recomputed by `validateHistory` (mirroring `t.featureIds`).
+- Added `graphs/parallel-build.v1.json`, a validating parent-graph sketch (dispatch → integration → success terminal) with `requiredGates: ["integration"]`.
+- Backward compatible: no `schemaVersion` bump and no on-disk format break. With the flag off, graph validation, `createTask`/`readTask`/`validateHistory`/`advance`, and all shipped behavior are byte-identical to 0.11.0.
+
+## 0.11.0
+
+- Added an opt-in reader/writer product-map lock, gated on a new `concurrency: "rw"` field in `PRODUCT.json`. When enabled, the five pure readers (`loadProduct`, `checkProduct`, `checkProductPrepared`, `featureContext`, `checkFeatureSync`) register in a `.product-map.readers/` directory and run concurrently, while mutations stay single-writer.
+- Writers under RW take the exclusive `.product-map.lock`, then verify the live-reader registry is empty before mutating, holding the lock across both the check and the whole operation (check-then-hold) to close the time-of-check/time-of-use window. A writer that meets live readers backs off within bounded named retries and otherwise reports active readers for retry.
+- This closes a pre-existing hazard: unlocked readers could previously observe a half-applied multi-file index update (new `PRODUCT.json` against a stale `PRODUCT.md`). Under RW a writer excludes readers for the whole multi-file update, so no reader sees that intermediate state.
+- Extended `product-recover` to reap dead local reader files (local host, PID returns `ESRCH`); a live or foreign-host reader file is left in place and reported for manual inspection, mirroring the existing writer-ownership policy. The dead-writer journal recovery path is unchanged and still runs even when a live reader is present.
+- Legacy mode (the field absent, the default for every existing map) is byte-identical to 0.10.0: a single exclusive lock, the same journal, rollback and recovery, and no `.product-map.readers/` directory is ever created. No on-disk format change; the field is an additive, author-edited key in `PRODUCT.json`.
+- Operational requirement: enable `concurrency: "rw"` only while the project is quiescent (no running tasks), because legacy readers in flight take no lock and are not retroactively coordinated by the enable write.
+- Deferred as future work: per-feature `syncFeature` write parallelism, a writer-intent anti-starvation flag, and an optional `product-concurrency` CLI toggle for flipping the field.
+
+## 0.10.0
+
+- Cache historical check-drift verification in-process: a fully-passing `verifyCheckIntegrity` result is memoized keyed by the report path, expected sha256 and (taskId, revision), guarded by the report and both log files' size+mtime, and reused only while all three files are byte-stable by stat.
+- Reuse the v0.9.0 content-hash cache for `status()` historical artifact drift so unchanged artifact files are not re-hashed on repeated walks.
+- Keep every drift-detection guarantee byte-identical: realpath containment, structural report validation, log path/sha checks, project-change detection and pass/review gates fail exactly when they did before; any report, log or artifact change still busts the cache and is detected. `verifyCheck`'s project-snapshot comparison still runs on every call — only the inner integrity sub-step is short-circuited.
+- No schema or on-disk format change; the caches are in-process only. Symlinks are never cached.
+
 ## 0.1.0
 
 Local graph runner, project task persistence, role instructions, workflow skill, policy guidance and extension documentation.
@@ -77,6 +103,13 @@ Historical intermediate work: the demos, evidence templates and runner manual de
 - Preserve existing unversioned schema-3 snapshot comparisons until implementation resubmission, and reject unsupported snapshot versions.
 - Add regression coverage and a real subprocess-driven task-tracker acceptance test with repair, resume, criterion execution and immutable evidence.
 - Clarify historical removed resources, current snapshot behavior, and remaining host integration boundaries; inspect both Node.js CI matrix jobs.
+
+## 0.9.0
+
+- Add an incremental content-hash cache for project snapshots, keyed by absolute path plus file size and mtime, so unchanged files are not re-hashed on repeated walks.
+- Reuse a single version-2 project snapshot within worker completion instead of recomputing the same tree state twice.
+- Preserve byte-identical snapshot hashes for versions 1 and 2, all task/graph schemas and on-disk formats; the cache is in-process only.
+- Keep every integrity guarantee: realpath containment, approval, code and project drift detection, historical check drift and pass/review gates fail exactly when they did before. Symlinks are always re-read so their resolved-target content is never served stale.
 
 ## 0.8.0
 

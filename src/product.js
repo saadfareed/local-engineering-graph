@@ -1,4 +1,4 @@
-import {mkdir,readFile,writeFile,rename,unlink,rm,realpath,stat,open,lstat,readlink,symlink,chmod} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,unlink,rm,realpath,stat,open,lstat,readlink,symlink,chmod,readdir} from 'node:fs/promises';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
 import {hostname} from 'node:os';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -74,9 +74,36 @@ async function rollback(root,entries) {
     else {await atomic(path,Buffer.from(entry.previous,'base64'));if(entry.mode!==undefined)await chmod(path,entry.mode);}
   }
 }
+const READER_RETRY_ATTEMPTS=50,READER_RETRY_BASE_MS=10;
+const readers=new AsyncLocalStorage();
+async function rwMode(root){try{return JSON.parse(await readFile(join(root,'PRODUCT.json'),'utf8')).concurrency==='rw';}catch{return false;}}
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+function readerAlive(entry){if(!entry||!Number.isInteger(entry.pid)||entry.pid<1||typeof entry.host!=='string')return true;if(entry.host!==hostname())return true;try{process.kill(entry.pid,0);return true;}catch(e){return e.code!=='ESRCH';}}
+async function liveReaders(root){const dir=join(root,'.product-map.readers');let names;try{names=await readdir(dir);}catch(e){if(e.code==='ENOENT')return false;throw e;}for(const name of names){let entry;try{entry=JSON.parse(await readFile(join(dir,name),'utf8'));}catch(e){if(e.code==='ENOENT')continue;entry=null;}if(readerAlive(entry))return true;}return false;}
+async function reader(root,fn){
+  if(readers.getStore()||transactions.getStore()||!await rwMode(root))return fn();
+  const lock=join(root,'.product-map.lock'),dir=join(root,'.product-map.readers');
+  await mkdir(dir,{recursive:true});
+  const file=join(dir,randomUUID());
+  for(let attempt=0;;attempt++){
+    let handle;
+    try{handle=await open(lock,'wx');}catch(e){if(e.code!=='EEXIST')throw e;if(attempt>=READER_RETRY_ATTEMPTS)throw Error('Product map is locked; use product-recover after its writer exits');await delay(READER_RETRY_BASE_MS*(attempt+1));continue;}
+    try{const own=await open(file,'wx');try{await own.writeFile(json({pid:process.pid,host:hostname(),acquiredAt:new Date().toISOString()}));await own.sync();}finally{await own.close();}}
+    finally{await handle.close();await unlink(lock).catch(e=>{if(e.code!=='ENOENT')throw e;});}
+    break;
+  }
+  try{return await readers.run(true,fn);}
+  finally{await unlink(file).catch(e=>{if(e.code!=='ENOENT')throw e;});}
+}
 async function locked(root,fn){
-  const path=join(root,'.product-map.lock');let handle;
-  try{handle=await open(path,'wx');}catch(e){if(e.code==='EEXIST')throw Error('Product map is locked; use product-recover after its writer exits');throw e;}
+  const path=join(root,'.product-map.lock'),rw=await rwMode(root);let handle;
+  for(let attempt=0;;attempt++){
+    try{handle=await open(path,'wx');}catch(e){if(e.code==='EEXIST')throw Error('Product map is locked; use product-recover after its writer exits');throw e;}
+    if(!rw||!await liveReaders(root))break;
+    await handle.close();await unlink(path).catch(e=>{if(e.code!=='ENOENT')throw e;});handle=undefined;
+    if(attempt>=READER_RETRY_ATTEMPTS)throw Error('Product map has active readers; retry');
+    await delay(READER_RETRY_BASE_MS*(attempt+1));
+  }
   const transaction={path:join(root,'.product-map.journal'),entries:[]};
   let release=true;
   try {
@@ -94,29 +121,48 @@ export async function recoverProduct(root) {
   root=resolve(root);
   const mutex=await open(join(root,'.product-map.recover'),'wx');
   try {
-    const path=join(root,'.product-map.lock'),raw=await readFile(path,'utf8'),before=await stat(path);
-    let owner;try {owner=JSON.parse(raw);} catch {throw Error('Incomplete product lock; inspect manually');}
-    if(owner.host!==hostname()||!Number.isInteger(owner.pid)||owner.pid<1) throw Error('Cannot establish local product lock ownership');
-    try {process.kill(owner.pid,0);throw Error('Writer is still active; recovery refused');} catch(e) {if(e.code!=='ESRCH')throw e;}
-    const journal=join(root,'.product-map.journal');
-    let entries=[];try {entries=JSON.parse(await readFile(journal,'utf8'));} catch(e) {if(e.code!=='ENOENT')throw e;}
-    if(!Array.isArray(entries))throw Error('Invalid product journal');
-    // Validate the entire undo log before changing any destination.
-    const paths=new Set();
-    for(const entry of entries){
-      if(!entry||typeof entry.path!=='string'||!isAbsolute(entry.path)||paths.has(entry.path)||typeof entry.directory!=='boolean')throw Error('Invalid product journal entry');
-      local(root,relative(root,entry.path));paths.add(entry.path);
-      if(entry.previous!==null&&(typeof entry.previous!=='string'||Buffer.from(entry.previous,'base64').toString('base64')!==entry.previous))throw Error('Invalid product journal contents');
-      if(entry.mode!==undefined&&(!Number.isInteger(entry.mode)||entry.mode<0||entry.mode>0o7777))throw Error('Invalid product journal permissions');
-      if(entry.link!==undefined&&(typeof entry.link!=='string'||!entry.link||entry.previous!==null||entry.directory))throw Error('Invalid product journal symlink');
-      if(entry.directory&&entry.previous!==null)throw Error('Invalid product journal directory');
+    const path=join(root,'.product-map.lock'),readersDir=join(root,'.product-map.readers');
+    let raw,before;try {raw=await readFile(path,'utf8');before=await stat(path);} catch(e) {if(e.code!=='ENOENT')throw e;}
+    let writer=null;
+    if(raw!==undefined){
+      let owner;try {owner=JSON.parse(raw);} catch {throw Error('Incomplete product lock; inspect manually');}
+      if(owner.host!==hostname()||!Number.isInteger(owner.pid)||owner.pid<1) throw Error('Cannot establish local product lock ownership');
+      try {process.kill(owner.pid,0);throw Error('Writer is still active; recovery refused');} catch(e) {if(e.code!=='ESRCH')throw e;}
+      const journal=join(root,'.product-map.journal');
+      let entries=[];try {entries=JSON.parse(await readFile(journal,'utf8'));} catch(e) {if(e.code!=='ENOENT')throw e;}
+      if(!Array.isArray(entries))throw Error('Invalid product journal');
+      // Validate the entire undo log before changing any destination.
+      const paths=new Set();
+      for(const entry of entries){
+        if(!entry||typeof entry.path!=='string'||!isAbsolute(entry.path)||paths.has(entry.path)||typeof entry.directory!=='boolean')throw Error('Invalid product journal entry');
+        local(root,relative(root,entry.path));paths.add(entry.path);
+        if(entry.previous!==null&&(typeof entry.previous!=='string'||Buffer.from(entry.previous,'base64').toString('base64')!==entry.previous))throw Error('Invalid product journal contents');
+        if(entry.mode!==undefined&&(!Number.isInteger(entry.mode)||entry.mode<0||entry.mode>0o7777))throw Error('Invalid product journal permissions');
+        if(entry.link!==undefined&&(typeof entry.link!=='string'||!entry.link||entry.previous!==null||entry.directory))throw Error('Invalid product journal symlink');
+        if(entry.directory&&entry.previous!==null)throw Error('Invalid product journal directory');
+      }
+      const backup=join(root,`.product-map.backup.${randomUUID()}.json`);
+      await writeFile(backup,json(entries),{flag:'wx'});
+      if((await stat(path)).ino!==before.ino||await readFile(path,'utf8')!==raw)throw Error('Lock changed during recovery');
+      await rollback(root,entries);
+      await unlink(journal).catch(e=>{if(e.code!=='ENOENT')throw e;});await unlink(path);
+      writer={recovered:true,backup};
     }
-    const backup=join(root,`.product-map.backup.${randomUUID()}.json`);
-    await writeFile(backup,json(entries),{flag:'wx'});
-    if((await stat(path)).ino!==before.ino||await readFile(path,'utf8')!==raw)throw Error('Lock changed during recovery');
-    await rollback(root,entries);
-    await unlink(journal).catch(e=>{if(e.code!=='ENOENT')throw e;});await unlink(path);
-    return {recovered:true,backup};
+    // Additive: reap dead local reader files; refuse live or foreign-host readers for manual inspection.
+    let names;try {names=await readdir(readersDir);} catch(e) {if(e.code!=='ENOENT')throw e;}
+    const reaped=[],refused=[];
+    if(names)for(const name of names){
+      let entry;try {entry=JSON.parse(await readFile(join(readersDir,name),'utf8'));} catch(e) {if(e.code==='ENOENT')continue;entry=null;}
+      if(entry&&entry.host===hostname()&&Number.isInteger(entry.pid)&&entry.pid>0){
+        let dead=false;try {process.kill(entry.pid,0);} catch(e) {if(e.code==='ESRCH')dead=true;else throw e;}
+        if(dead){await unlink(join(readersDir,name)).catch(e=>{if(e.code!=='ENOENT')throw e;});reaped.push(name);continue;}
+      }
+      refused.push(name);
+    }
+    if(writer)return names?{...writer,reapedReaders:reaped,refusedReaders:refused}:writer;
+    if(!names)throw Object.assign(new Error('Cannot establish local product lock ownership'),{code:'ENOENT'});
+    if(refused.length)throw Error('Cannot establish local reader ownership; inspect manually');
+    return {recovered:false,reapedReaders:reaped,refusedReaders:refused};
   } finally {await mutex.close();await unlink(join(root,'.product-map.recover'));}
 }
 function acyclic(nodes,dependencies,label){
@@ -125,9 +171,11 @@ function acyclic(nodes,dependencies,label){
   for(const id of nodes)visit(id);
 }
 function distinctStrings(values,label){if(!Array.isArray(values)||values.some(v=>!nonempty(v))||new Set(values).size!==values.length)throw Error(`Invalid ${label}`);}
-export async function loadProduct(root){
-  root=resolve(root);const product=await readJSON(root,'PRODUCT.json');
+export async function loadProduct(root){root=resolve(root);return reader(root,()=>loadProductBody(root));}
+async function loadProductBody(root){
+  const product=await readJSON(root,'PRODUCT.json');
   if(![1,2].includes(product.schemaVersion)||!nonempty(product.name)||!Array.isArray(product.features))throw Error('Invalid product registry');
+  if(product.concurrency!==undefined&&product.concurrency!=='rw')throw Error('Invalid product concurrency mode');
   await file(root,product.policies);await file(root,product.architecture);
   if(product.schemaVersion===2){
     if(!product.documents||!product.preparation||!['draft','ready'].includes(product.preparation.status)||!Array.isArray(product.domains))throw Error('Invalid product preparation metadata');
@@ -271,8 +319,9 @@ function featurePaths(m,f){
   return [...(m.product.schemaVersion===2?['PRODUCT.json']:[]),m.product.policies,m.product.architecture,...manualDocuments(m.product),...mapped.flatMap(feature=>[feature.manifestPath,feature.scope,feature.policies,...(m.product.schemaVersion===2?[feature.documentation,feature.userFlows]:[]),...feature.components.map(c=>c.path),...feature.tests.map(t=>t.path)])];
 }
 function testResults(f,results){if(!Array.isArray(results)||f.tests.some(t=>!results.some(r=>r.id===t.id&&r.status==='passed'&&r.command===t.command&&nonempty(r.result))))throw Error('Record passing results for every mapped test');}
-export async function checkFeatureSync(root,id,model,cache){
-  const m=model??await loadProduct(root),f=m.features.get(id);if(!f)throw Error('Unknown feature');
+export async function checkFeatureSync(root,id,model,cache){root=resolve(root);return reader(root,()=>checkFeatureSyncBody(root,id,model,cache));}
+async function checkFeatureSyncBody(root,id,model,cache){
+  const m=model??await loadProductBody(root),f=m.features.get(id);if(!f)throw Error('Unknown feature');
   if(m.product.schemaVersion!==2)return {valid:true,legacy:true};
   let record;try{record=await readJSON(m.root,join(f.directory,'synchronization.json'));}catch(e){if(e.code==='ENOENT')throw Error(`Feature ${id} is out of sync; run feature-sync with review and test evidence`);throw e;}
   const current=await snapshotPaths(m.root,featurePaths(m,f),cache);
@@ -306,19 +355,22 @@ export async function prepareProduct(root,record){
     await atomic(join(root,'PRODUCT.json'),json(m.product));await writeIndexes(await loadProduct(root));return m.product.preparation;
   });
 }
-export async function checkProductPrepared(root){
-  const m=await loadProduct(root),p=m.product.preparation;
+export async function checkProductPrepared(root){root=resolve(root);return reader(root,()=>checkProductPreparedBody(root));}
+async function checkProductPreparedBody(root){
+  const m=await loadProductBody(root),p=m.product.preparation;
   if(m.product.schemaVersion!==2||p.status!=='ready'||!p.snapshot)throw Error('Prepare product scope, domains, roadmaps, feature list, user flows and documentation before implementation; run product-ready');
   if(JSON.stringify(await snapshotPaths(m.root,p.artifacts))!==JSON.stringify(p.artifactSnapshot)||JSON.stringify(p.featurePlans)!==JSON.stringify([...m.features.values()].map(f=>({id:f.id,domainIds:f.domainIds,scope:f.scope,policies:f.policies,documentation:f.documentation,userFlows:f.userFlows})))||JSON.stringify(await snapshotPaths(m.root,Object.keys(p.snapshot)))!==JSON.stringify(p.snapshot)||JSON.stringify(p.domains)!==JSON.stringify(m.product.domains)||JSON.stringify(p.features)!==JSON.stringify([...m.features.keys()]))throw Error('Product planning documents changed; review and run product-ready again');
   return {ready:true};
 }
-export async function checkProduct(root,{requireSync=true}={}){
-  const m=await loadProduct(root);const current=await readFile(join(m.root,'PRODUCT.md'),'utf8');if(current!==index(m))throw Error('PRODUCT.md is stale; run product-sync');
-  if(m.product.schemaVersion===2){if(await file(m.root,m.product.documents.features).then(b=>b.toString())!==featureList(m))throw Error('Feature list is stale; run product-sync');if(requireSync){const cache=new Map();for(const f of m.features.values())if(f.status==='implemented')await checkFeatureSync(m.root,f.id,m,cache);}}
+export async function checkProduct(root,{requireSync=true}={}){root=resolve(root);return reader(root,()=>checkProductBody(root,{requireSync}));}
+async function checkProductBody(root,{requireSync=true}={}){
+  const m=await loadProductBody(root);const current=await readFile(join(m.root,'PRODUCT.md'),'utf8');if(current!==index(m))throw Error('PRODUCT.md is stale; run product-sync');
+  if(m.product.schemaVersion===2){if(await file(m.root,m.product.documents.features).then(b=>b.toString())!==featureList(m))throw Error('Feature list is stale; run product-sync');if(requireSync){const cache=new Map();for(const f of m.features.values())if(f.status==='implemented')await checkFeatureSyncBody(m.root,f.id,m,cache);}}
   return {valid:true,features:m.features.size,components:m.components.size,tests:[...m.features.values()].reduce((n,f)=>n+f.tests.length,0)};
 }
-export async function featureContext(root,id){
-  const m=await loadProduct(root);if(!m.features.has(id))throw Error('Unknown feature');
+export async function featureContext(root,id){root=resolve(root);return reader(root,()=>featureContextBody(root,id));}
+async function featureContextBody(root,id){
+  const m=await loadProductBody(root);if(!m.features.has(id))throw Error('Unknown feature');
   const dependencies=new Set(),dependents=new Set();
   const upstream=x=>{for(const dep of m.features.get(x).dependsOn)if(!dependencies.has(dep)){dependencies.add(dep);upstream(dep);}};upstream(id);
   const downstream=x=>{for(const f of m.features.values())if(f.dependsOn.includes(x)&&!dependents.has(f.id)){dependents.add(f.id);downstream(f.id);}};downstream(id);

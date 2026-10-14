@@ -6,6 +6,19 @@ import {dirname,join,relative,isAbsolute,resolve} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 
 const hash=value=>createHash('sha256').update(value).digest('hex');
+// Incremental check-verification cache mirroring the v0.9.0 content-hash cache in src/state.js.
+// Memoizes a fully-passing verifyCheckIntegrity result keyed by the report's absolute path plus the
+// expected ref.sha256 and the (taskId,revision) the report is bound to, guarded by the on-disk
+// size+mtimeMs of the report AND both log files. Relies on the "local files are trusted input"
+// boundary (docs/architecture.md): on an honest filesystem any content change moves size or
+// mtimeMs, so any stat change forces a full re-read+re-hash and byte-identical outcomes. Every
+// structural/realpath/isFile check in verifyCheckIntegrity still runs before any cache decision;
+// the cache only short-circuits the expensive report read+parse+hash and the two fileHash streams
+// over the logs for an entry that already fully passed and is byte-stable by stat. The Map persists
+// for the life of the process and grows unbounded, a tradeoff that only matters for long-lived
+// processes (CLI invocations are short-lived single processes), same as v0.9.0.
+const verifyCache=new Map();
+export const __checkVerifyCacheStats={verifications:0,hits:0};
 const MAX_OUTPUT=1024*1024;
 const MAX_LOG_BYTES=100*1024*1024;
 const MAX_TIMEOUT=1800000;
@@ -65,15 +78,31 @@ export async function verifyCheckIntegrity(taskFile,task,ref,revision){
   const taskDir=await realpath(dirname(taskFile)),checks=join(taskDir,'checks');
   if(!(await lstat(checks)).isDirectory()||await realpath(checks)!==checks)throw Error('Check directory escaped task');
   const path=join(taskDir,ref.path);
-  if(!(await lstat(path)).isFile()||await realpath(path)!==path)throw Error('Check report must be a regular file');
+  const reportStat=await lstat(path);
+  if(!reportStat.isFile()||await realpath(path)!==path)throw Error('Check report must be a regular file');
+  // Log paths are derivable from the report id encoded in ref.path (regex-validated above), so the
+  // report + both logs can be stat-keyed before the expensive read/hash. A cached entry is reused
+  // only when ref.sha256 and (taskId,revision) match AND all three files' size+mtimeMs are
+  // unchanged since the verified entry; any stat change forces the full re-verification below.
+  const reportId=ref.path.slice(7,-5),stdoutPath=join(checks,`${reportId}.stdout`),stderrPath=join(checks,`${reportId}.stderr`);
+  const cacheKey=`${path}|${ref.sha256}|${task.id}|${revision}`;
+  const cached=verifyCache.get(cacheKey);
+  if(cached){
+    const stdoutStat=await lstat(stdoutPath).catch(()=>null),stderrStat=await lstat(stderrPath).catch(()=>null);
+    if(stdoutStat&&stderrStat&&cached.reportSize===reportStat.size&&cached.reportMtimeMs===reportStat.mtimeMs&&cached.stdoutSize===stdoutStat.size&&cached.stdoutMtimeMs===stdoutStat.mtimeMs&&cached.stderrSize===stderrStat.size&&cached.stderrMtimeMs===stderrStat.mtimeMs){__checkVerifyCacheStats.hits++;return cached.report;}
+  }
   const bytes=await readFile(path);
   if(hash(bytes)!==ref.sha256)throw Error('Check report changed');
   const report=JSON.parse(bytes);
   if(![2,3,4].includes(report.schemaVersion)||report.id!==ref.path.slice(7,-5)||report.taskId!==task.id||report.root!==await realpath(task.root)||report.taskRevision!==revision||report.exitCode!==0||report.signal!==null||report.timedOut||report.outputLimitExceeded||report.projectChangedDuringRun)throw Error('Check did not pass for this task revision');
+  const logStats={};
   for(const [name,expected] of [['stdout',report.stdoutLog],['stderr',report.stderrLog]]){
-    const logPath=join(checks,`${report.id}.${name}`);
-    if(expected?.path!==`checks/${report.id}.${name}`||typeof expected.sha256!=='string'||!(await lstat(logPath)).isFile()||await realpath(logPath)!==logPath||await fileHash(logPath)!==expected.sha256)throw Error('Check output log changed');
+    const logPath=join(checks,`${report.id}.${name}`),logStat=await lstat(logPath);
+    if(expected?.path!==`checks/${report.id}.${name}`||typeof expected.sha256!=='string'||!logStat.isFile()||await realpath(logPath)!==logPath||await fileHash(logPath)!==expected.sha256)throw Error('Check output log changed');
+    logStats[name]=logStat;
   }
+  verifyCache.set(cacheKey,{reportSize:reportStat.size,reportMtimeMs:reportStat.mtimeMs,stdoutSize:logStats.stdout.size,stdoutMtimeMs:logStats.stdout.mtimeMs,stderrSize:logStats.stderr.size,stderrMtimeMs:logStats.stderr.mtimeMs,report});
+  __checkVerifyCacheStats.verifications++;
   return report;
 }
 

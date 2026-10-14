@@ -14,12 +14,13 @@ async function durableWrite(path,content){
   try{await handle.writeFile(content);await handle.sync();}finally{await handle.close();}
 }
 async function syncDirectory(path){const handle=await open(path,'r');try{await handle.sync();}finally{await handle.close();}}
-export async function createTask(root,graph,objective,{supersedes}={}) {
+export async function createTask(root,graph,objective,{supersedes,parent}={}) {
   validateGraph(graph);if(!objective?.trim())throw Error('Objective required');
   if(supersedes)await readTask(supersedes);
+  if(parent)await readTask(parent);
   const id=randomUUID(),dir=join(resolve(root),'.engineering','tasks',id);
   await mkdir(dir,{recursive:true});
-  const task={schemaVersion:3,id,objective,root:resolve(root),supersedes:supersedes?resolve(supersedes):null,graph:structuredClone(graph),graphHash:digest(graph),node:graph.start,revision:0,traversals:{},events:[],code:null};
+  const task={schemaVersion:3,id,objective,root:resolve(root),supersedes:supersedes?resolve(supersedes):null,parent:parent?resolve(parent):null,graph:structuredClone(graph),graphHash:digest(graph),node:graph.start,revision:0,traversals:{},events:[],code:null};
   await durableWrite(join(dir,'task.json'),JSON.stringify(task,null,2));await syncDirectory(dir);return task;
 }
 export async function readTask(file){
@@ -75,12 +76,32 @@ function validateHistory(t) {
   if(t.schemaVersion===3&&digest(t.approvedPlan??null)!==digest(approvedPlan??null))throw Error('Corrupted plan approval state');
   if (t.schemaVersion===3 && (typeof t.root!=='string'||!isAbsolute(t.root)||typeof t.id!=='string')) throw Error('Invalid task root or ID');
 }
-async function safeFile(root,path) {
+async function containedFull(root,path) {
   if (typeof path!=='string'||!path||isAbsolute(path)) throw Error('Paths must be relative');
   const full=resolve(root,path),base=await realpath(root),actual=await realpath(full),rel=relative(base,actual);
   if (rel==='..'||rel.startsWith('../')||isAbsolute(rel)) throw Error('Path escapes project or task directory');
   if (!(await stat(full)).isFile()) throw Error('Expected file');
-  return readFile(full);
+  return full;
+}
+async function safeFile(root,path) {return readFile(await containedFull(root,path));}
+// Incremental content-hash cache keyed by absolute path + stat (size,mtimeMs). Relies on the
+// "local files are trusted input" boundary (docs/architecture.md): on an honest filesystem any
+// content change moves size or mtimeMs, so any stat change forces a full re-read+re-hash and
+// preserves byte-identical hash outputs. The containment/realpath/isFile validation in
+// containedFull still runs on every walk; only the read+hash of an already-validated path is
+// cached. The Map persists for the life of the process and grows unbounded, a tradeoff that only
+// matters for long-lived processes (CLI invocations are short-lived single processes).
+const hashCache=new Map();
+export const __snapshotCacheStats={hashes:0,hits:0};
+async function cachedFileHash(root,path,size,mtimeMs,symlink) {
+  const full=await containedFull(root,path);
+  // Symlinks are never cached: safeFile reads the resolved target's content, but an lstat reports
+  // the link's own size+mtime which does not change when the target changes, so a stat-keyed cache
+  // would serve a stale hash. Links are rare; always re-read them to preserve identical hashes.
+  if(symlink){__snapshotCacheStats.hashes++;return digest(await readFile(full));}
+  const entry=hashCache.get(full);
+  if(entry&&entry.size===size&&entry.mtimeMs===mtimeMs){__snapshotCacheStats.hits++;return entry.hash;}
+  const hash=digest(await readFile(full));hashCache.set(full,{size,mtimeMs,hash});__snapshotCacheStats.hashes++;return hash;
 }
 async function artifactSnapshot(file,paths) {
   const result=Object.create(null);
@@ -105,9 +126,9 @@ export async function projectSnapshot(root,version=2,codeHashes) {
         await walk(full);
       }
       else if (entry.isFile()||entry.isSymbolicLink()) {
-        const content=digest(await safeFile(root,path));
+        const st=await lstat(full),content=await cachedFileHash(root,path,st.size,st.mtimeMs,entry.isSymbolicLink());
         codeHashes?.set(path,content);
-        result[path]=version===1?content:digest({type:entry.isSymbolicLink()?'symlink':'file',mode:(await lstat(full)).mode&0o7777,...(entry.isSymbolicLink()?{target:await readlink(full)}:{}),content});
+        result[path]=version===1?content:digest({type:entry.isSymbolicLink()?'symlink':'file',mode:st.mode&0o7777,...(entry.isSymbolicLink()?{target:await readlink(full)}:{}),content});
       }
       else throw Error(`Unsupported snapshot entry: ${path}`);
     }
@@ -200,6 +221,34 @@ async function checkEvidence(file,t,outcome,e){
   let currentCheckSnapshot;
   const getSnapshot=async()=>currentCheckSnapshot??=await projectSnapshot(t.root);
   if (t.schemaVersion===3) e.artifactSnapshot=await artifactSnapshot(file,e.artifacts);
+  if(t.graph.parallelWorkers&&role==='integration-coordinator'&&outcome==='integrated'){
+    if(!Array.isArray(e.children)||!e.children.length)throw Error('Integration requires a nonempty children array');
+    if(new Set(e.children.map(c=>c?.taskFile)).size!==e.children.length)throw Error('Integration children must be distinct by taskFile');
+    const sha=/^[0-9a-f]{7,40}$/;
+    for(const child of e.children){
+      if(!child||typeof child!=='object')throw Error('Invalid integration child');
+      if(typeof child.taskFile!=='string'||!child.taskFile.trim())throw Error('Integration child requires a taskFile');
+      if(typeof child.branch!=='string'||!child.branch.trim())throw Error('Integration child requires a branch');
+      if(typeof child.mergedInto!=='string'||!child.mergedInto.trim())throw Error('Integration child requires a mergedInto target');
+      for(const field of ['baseCommit','headCommit','mergeCommit'])if(child[field]!==undefined&&!sha.test(child[field]))throw Error(`Integration child has a malformed SHA: ${field}`);
+      if(child.mergeCommit!==undefined&&child.baseCommit!==undefined&&child.mergeCommit===child.baseCommit)throw Error('Integration child mergeCommit must differ from baseCommit');
+    }
+    if(new Set(e.children.map(c=>c.mergedInto)).size!==1)throw Error('Integration children must share a single mergedInto target');
+    for(const child of e.children){
+      if(isAbsolute(child.taskFile))throw Error('Integration child taskFile must be relative to the parent task directory');
+      const childFile=await containedFull(t.root,relative(t.root,resolve(dirname(file),child.taskFile)));
+      const c=await readTask(childFile);
+      if(c.parent!==resolve(file))throw Error('Child parent back-pointer mismatch');
+      const cn=c.graph.nodes[c.node];
+      if(cn.type!=='terminal'||cn.success!==true)throw Error('Child not at success terminal');
+      const passed=r=>c.events.some(ev=>c.graph.nodes[ev.node]?.role===r&&ev.outcome==='passed');
+      if(!passed('reviewer')||!passed('validator'))throw Error('Child missing recorded review/validation pass');
+    }
+    if(!Array.isArray(e.integrationChecks)||!e.integrationChecks.length)throw Error('Integration requires a combined integration check');
+    await verifyRecordedChecks(file,t,e.integrationChecks,getSnapshot);
+    if(e.ancestryChecks!==undefined)await verifyRecordedChecks(file,t,e.ancestryChecks,getSnapshot);
+    t.integration={children:e.children,mergedInto:e.children[0].mergedInto,integratedAt:new Date().toISOString()};
+  }
   if(t.graph.nodes[t.node].type==='approval'){
     if(!e.approval||e.approval.decision!==outcome||typeof e.approval.scope!=='string'||!e.approval.scope.trim()||typeof e.approval.response!=='string'||!e.approval.response.trim())throw Error('Approval requires matching decision, scope and actual response');
   }
@@ -263,7 +312,7 @@ async function checkEvidence(file,t,outcome,e){
     }
     t.code=await snapshots(t.root,files,t.schemaVersion===3);
     if(t.schemaVersion===3) {
-      t.projectSnapshot=await projectSnapshot(t.root);
+      t.projectSnapshot=await getSnapshot(); // same root, version 2 and tree state as the memoized check snapshot
       t.projectSnapshotVersion=2;
     }
   }
@@ -305,7 +354,7 @@ export async function status(file){
   const t=await readTask(file),changedArtifacts=[];
   for(const event of t.events) for(const [path,expected] of Object.entries(event.evidence?.artifactSnapshot??{})) {
     let current;
-    try { current=digest(await safeFile(dirname(file),path)); } catch { current=null; }
+    try { const st=await lstat(await containedFull(dirname(file),path));current=await cachedFileHash(dirname(file),path,st.size,st.mtimeMs,st.isSymbolicLink()); } catch { current=null; }
     if(current!==expected)changedArtifacts.push({revision:event.revision,path});
   }
   const codeHashes=new Map();

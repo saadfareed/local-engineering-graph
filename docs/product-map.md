@@ -182,6 +182,8 @@ For a change request: find the feature in PRODUCT.md, inspect feature-context, r
 
 Map writes use a local exclusive .product-map.lock file and a write-ahead undo journal. Failed operations roll back. After a crashed local writer exits, use `node src/cli.js product-recover /absolute/product/path`; it backs up the journal and restores interrupted changes before removing the lock. Recovery refuses live or foreign-host writers. Incomplete metadata and stale recovery mutexes require manual inspection. The task recover command handles task locks separately. Full power-loss durability is not guaranteed.
 
+Setting `"concurrency": "rw"` in PRODUCT.json opts into concurrent readers: map reads run in parallel while mutations stay single-writer, which relieves contention when independent tasks only read the map during review and validation. Enable it only when the project is quiescent, with no running tasks, because readers started under the default mode take no lock and are not coordinated by the enabling write. Recovery also reaps dead reader files left by crashed reader processes; a live or foreign-host reader file is reported for manual inspection rather than removed. Leaving the field out keeps the default single exclusive lock, which is unchanged.
+
 V5 also requires design/reuse planning, implementation assessment and engineering review evidence; see [engineering quality](engineering-quality.md).
 
 V6 also requires product proposal assessments and material design option/cost comparisons; see [critical planning](critical-planning.md).
