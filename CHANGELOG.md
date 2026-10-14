@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+- Added an opt-in reader/writer product-map lock, gated on a new `concurrency: "rw"` field in `PRODUCT.json`. When enabled, the five pure readers (`loadProduct`, `checkProduct`, `checkProductPrepared`, `featureContext`, `checkFeatureSync`) register in a `.product-map.readers/` directory and run concurrently, while mutations stay single-writer.
+- Writers under RW take the exclusive `.product-map.lock`, then verify the live-reader registry is empty before mutating, holding the lock across both the check and the whole operation (check-then-hold) to close the time-of-check/time-of-use window. A writer that meets live readers backs off within bounded named retries and otherwise reports active readers for retry.
+- This closes a pre-existing hazard: unlocked readers could previously observe a half-applied multi-file index update (new `PRODUCT.json` against a stale `PRODUCT.md`). Under RW a writer excludes readers for the whole multi-file update, so no reader sees that intermediate state.
+- Extended `product-recover` to reap dead local reader files (local host, PID returns `ESRCH`); a live or foreign-host reader file is left in place and reported for manual inspection, mirroring the existing writer-ownership policy. The dead-writer journal recovery path is unchanged and still runs even when a live reader is present.
+- Legacy mode (the field absent, the default for every existing map) is byte-identical to 0.10.0: a single exclusive lock, the same journal, rollback and recovery, and no `.product-map.readers/` directory is ever created. No on-disk format change; the field is an additive, author-edited key in `PRODUCT.json`.
+- Operational requirement: enable `concurrency: "rw"` only while the project is quiescent (no running tasks), because legacy readers in flight take no lock and are not retroactively coordinated by the enable write.
+- Deferred as future work: per-feature `syncFeature` write parallelism, a writer-intent anti-starvation flag, and an optional `product-concurrency` CLI toggle for flipping the field.
+
 ## 0.10.0
 
 - Cache historical check-drift verification in-process: a fully-passing `verifyCheckIntegrity` result is memoized keyed by the report path, expected sha256 and (taskId, revision), guarded by the report and both log files' size+mtime, and reused only while all three files are byte-stable by stat.
