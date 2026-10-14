@@ -19,3 +19,5 @@ Implemented in v0.5: justified design/reuse/slice plans, implementation performa
 Implemented in v0.6: independent proposal/design assessments, stance/evidence, option pros/cons/risks and lifecycle cost/basis/confidence records. Validating external quotes and recommendation semantics remains host work.
 
 Implemented in v0.9: incremental project-snapshot performance work — an in-process content-hash cache keyed by path+size+mtime plus per-operation snapshot reuse, with byte-identical hashes and all integrity guarantees preserved. Parallel snapshot hashing across workers remains future work (see the Later item above).
+
+Implemented in v0.10: incremental cached historical-verification work — in-process caching of fully-passing check-drift verification keyed by report+log stat (size+mtime) and expected sha256, plus `status()` historical artifact-drift reuse through the v0.9 content-hash cache. Drift-detection outcomes stay byte-identical and every integrity guarantee is preserved; `verifyCheck`'s project comparison still runs every call. Parallel workers across isolated branches remain future work (see the Later item above).

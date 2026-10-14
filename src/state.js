@@ -325,7 +325,7 @@ export async function status(file){
   const t=await readTask(file),changedArtifacts=[];
   for(const event of t.events) for(const [path,expected] of Object.entries(event.evidence?.artifactSnapshot??{})) {
     let current;
-    try { current=digest(await safeFile(dirname(file),path)); } catch { current=null; }
+    try { const st=await lstat(await containedFull(dirname(file),path));current=await cachedFileHash(dirname(file),path,st.size,st.mtimeMs,st.isSymbolicLink()); } catch { current=null; }
     if(current!==expected)changedArtifacts.push({revision:event.revision,path});
   }
   const codeHashes=new Map();

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Cache historical check-drift verification in-process: a fully-passing `verifyCheckIntegrity` result is memoized keyed by the report path, expected sha256 and (taskId, revision), guarded by the report and both log files' size+mtime, and reused only while all three files are byte-stable by stat.
+- Reuse the v0.9.0 content-hash cache for `status()` historical artifact drift so unchanged artifact files are not re-hashed on repeated walks.
+- Keep every drift-detection guarantee byte-identical: realpath containment, structural report validation, log path/sha checks, project-change detection and pass/review gates fail exactly when they did before; any report, log or artifact change still busts the cache and is detected. `verifyCheck`'s project-snapshot comparison still runs on every call — only the inner integrity sub-step is short-circuited.
+- No schema or on-disk format change; the caches are in-process only. Symlinks are never cached.
+
 ## 0.1.0
 
 Local graph runner, project task persistence, role instructions, workflow skill, policy guidance and extension documentation.
