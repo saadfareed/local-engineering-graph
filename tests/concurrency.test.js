@@ -33,6 +33,15 @@ async function legacyFixture(fn){
 async function enableRW(root){const p=JSON.parse(await readFile(join(root,'PRODUCT.json')));p.concurrency='rw';await writeFile(join(root,'PRODUCT.json'),JSON.stringify(p,null,2)+'\n');await syncProduct(root);}
 const exists=async p=>{try{await access(p);return true;}catch{return false;}};
 async function waitFor(path,deadline=20000){const start=Date.now();while(!await exists(path)){if(Date.now()-start>deadline)throw Error('barrier timeout: '+path);await new Promise(r=>setTimeout(r,15));}}
+// Negative sentinel: assert `promise` is STILL pending after `ms`. Races the promise
+// against a bounded timer and asserts the timer wins. Sound as a happens-before probe
+// only inside a window a filesystem barrier guarantees the contended lock is held — it
+// proves non-completion without comparing two independently-captured wall-clock stamps.
+const PENDING=Symbol('pending');
+async function assertStillPending(promise,ms,message){
+  const result=await Promise.race([promise.then(()=>'resolved',()=>'rejected'),new Promise(r=>setTimeout(()=>r(PENDING),ms))]);
+  assert.equal(result,PENDING,message);
+}
 // Writers fail fast with "Product map is locked" / "active readers" when another writer
 // holds the exclusive lock. In the real system a caller retries; mirror that here so the
 // test exercises genuine contention and asserts the map stays consistent (no corruption).
@@ -85,18 +94,15 @@ test('rw in-flight reader blocks a writer until the reader releases',()=>rwFixtu
   const signalFile=join(root,'sig-'+randomUUID()),releaseFile=join(root,'rel-'+randomUUID());
   const held=run('hold-reader',root,signalFile,releaseFile);
   await waitFor(signalFile);
-  // The writer must not complete while a live reader is registered. The child holds its
-  // reader file until we write releaseFile; the writer thus completes strictly after we
-  // record the release moment. Deterministic: ordering is tied to the filesystem barrier,
-  // not to a fixed sleep.
-  let writerDone=0;
-  const writer=writeWithRetry(()=>addFeature(root,'gamma','Gamma')).then(r=>{writerDone=Date.now();return r;});
-  // Give the writer time to observe the live reader and begin backing off.
-  await new Promise(r=>setTimeout(r,100));
-  const released=Date.now();await writeFile(releaseFile,'1');
+  // The writer must not COMPLETE while a live reader is registered. The child holds its
+  // reader file until we write releaseFile, so for the whole window before release the
+  // writer provably cannot acquire the exclusive lock — hence cannot complete. Prove that
+  // directly with a negative sentinel rather than comparing two wall-clock stamps.
+  const writer=writeWithRetry(()=>addFeature(root,'gamma','Gamma'));
+  await assertStillPending(writer,200,'writer must stay blocked while a live reader is registered');
+  await writeFile(releaseFile,'1');
   const {code,stderr}=await held.done;assert.equal(code,0,stderr);
   await writer;
-  assert.ok(writerDone>=released,'writer must complete only after the reader is released, not before');
   const model=await loadProduct(root);
   assert.ok(model.features.has('gamma'));
   await checkProduct(root);
@@ -109,13 +115,15 @@ test('rw in-flight writer blocks a new reader until the writer finishes',()=>rwF
   await waitFor(signalFile);
   // The writer child holds .product-map.lock until we write releaseFile, so a new reader
   // cannot register (its brief lock acquire gets EEXIST and retries) until after release.
-  let readerDone=0;
-  const read=writeWithRetry(()=>checkProduct(root)).then(r=>{readerDone=Date.now();return r;});
-  await new Promise(r=>setTimeout(r,100));
-  const released=Date.now();await writeFile(releaseFile,'1');
+  // Observe pending-ness STRICTLY BEFORE writing releaseFile: during this window the lock
+  // is provably held, so the reader provably cannot complete — and the helper's post-release
+  // addFeature has not started, so the reader is contending only with the held lock. A
+  // negative sentinel proves blocking without comparing two independently-captured stamps.
+  const read=writeWithRetry(()=>checkProduct(root));
+  await assertStillPending(read,200,'reader must stay blocked while the writer holds the exclusive lock');
+  await writeFile(releaseFile,'1');
   const {code,stderr}=await held.done;assert.equal(code,0,stderr);
   await read;
-  assert.ok(readerDone>=released,'reader must complete only after the writer releases, not before');
   const model=await loadProduct(root);assert.ok(model.features.has('delta'));
 }));
 

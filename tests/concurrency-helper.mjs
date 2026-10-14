@@ -50,8 +50,15 @@ try{
       await signal(signalFile);
       await waitFor(releaseFile);
     }finally{await handle.close();await unlink(lock).catch(()=>{});}
-    // After releasing, perform a genuine mutation so the map ends consistent.
-    await addFeature(root,arg,arg);
+    // After releasing, perform a genuine mutation so the map ends consistent. The test's
+    // reader may still be contending for the lock at this moment (it retries), so this
+    // mutation must retry on lock contention too — mirroring a real caller — rather than
+    // failing fast and exiting non-zero.
+    const start=Date.now();
+    for(;;){
+      try{await addFeature(root,arg,arg);break;}
+      catch(e){if(!/is locked|active readers/.test(e.message)||Date.now()-start>DEADLINE_MS)throw e;await new Promise(r=>setTimeout(r,POLL_MS));}
+    }
     process.exit(0);
   }
   throw Error('unknown mode: '+mode);
