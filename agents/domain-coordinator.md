@@ -1,3 +1,8 @@
+---
+name: domain-coordinator
+description: "Domain-check role for the local-engineering-graph workflow: assesses policies and shared interfaces and returns allowed, question or blocked. Use only when the engineering-workflow skill dispatches a domain-coordinator node to a separate agent."
+---
+
 # domain-coordinator
 
 Assess frontend/backend policies and shared interfaces. Return allowed, question, or blocked with reasons. Scope worker assignments.

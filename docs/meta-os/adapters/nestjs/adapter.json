@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "id": "nestjs",
+  "name": "NestJS",
+  "language": "typescript",
+  "framework": "NestJS",
+  "frameworkVersion": ">=10",
+  "runtime": {
+    "bootstrap": ["sh", "-c", "npx --yes @nestjs/cli@latest new . --skip-git --package-manager npm --language TS && npm i -s class-validator class-transformer @nestjs/swagger typeorm pg"],
+    "install": ["npm", "ci"],
+    "test": ["npx", "jest", "{testPath}"],
+    "lint": ["npx", "eslint", "src"],
+    "typecheck": ["npx", "tsc", "--noEmit", "-p", "tsconfig.json"],
+    "serve": ["sh", "-c", "PORT={port} npm run start"],
+    "openapiExport": ["node", "dist/openapi-dump.js"],
+    "healthPath": "/healthz"
+  },
+  "layout": {
+    "root": "src",
+    "domainDir": "src/{domain}",
+    "tests": "src/{domain}/__tests__",
+    "migrations": "src/migrations"
+  },
+  "typeMap": {
+    "string": "string", "string/uuid": "string", "string/date-time": "Date", "string/date": "string",
+    "integer": "number", "number": "number", "boolean": "boolean", "array": "Array", "object": "Record<string, unknown>", "null": "null"
+  },
+  "layers": [
+    {"id": "entity", "role": "model", "path": "src/{domain}/{resource}.entity.ts", "template": "templates/entity.ts.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}"]},
+    {"id": "dto", "role": "schema", "path": "src/{domain}/dto/{endpoint}.dto.ts", "template": "templates/dto.ts.tmpl", "mergeStrategy": "overwrite", "callGraphSymbols": ["{Endpoint}Dto", "{Endpoint}ResponseDto"]},
+    {"id": "repository", "role": "repository", "path": "src/{domain}/{resource}.repository.ts", "template": "templates/repository.ts.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}Repository.get", "{Resource}Repository.insert", "{Resource}Repository.list", "{Resource}Repository.update", "{Resource}Repository.delete"]},
+    {"id": "service", "role": "service", "path": "src/{domain}/{resource}.service.ts", "template": "templates/service.ts.tmpl", "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}Service.{endpoint}"]},
+    {"id": "controller", "role": "controller", "path": "src/{domain}/{resource}.controller.ts", "template": "templates/controller.ts.tmpl", "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}Controller.{endpoint}"]},
+    {"id": "module", "role": "wiring", "path": "src/{domain}/{domain}.module.ts", "template": "templates/module.ts.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block"},
+    {"id": "tests", "role": "test", "path": "src/{domain}/__tests__/{endpoint}.spec.ts", "template": "templates/spec.ts.tmpl", "mergeStrategy": "overwrite"}
+  ],
+  "policyBindings": {
+    "rbac": {"mechanism": "`@Scopes('orders:write')` decorator + `ScopesGuard` reading JWT claims", "template": "templates/policy_rbac.ts.tmpl", "verifier": "tests"},
+    "idempotency": {"mechanism": "`IdempotencyInterceptor` keyed on (user, Idempotency-Key, body hash) backed by `IdempotencyStore`", "template": "templates/policy_idempotency.ts.tmpl", "verifier": "tests"},
+    "transaction": {"mechanism": "`DataSource.transaction(async manager => …)` wrapping the service method named in the policy", "verifier": "call-graph"},
+    "queries": {"mechanism": "TypeORM `relations`/QueryBuilder joins for every relation named; query logger fixture asserts the max", "verifier": "query-count"},
+    "latency_p95_ms": {"mechanism": "jest benchmark test tagged with the budget", "verifier": "latency"},
+    "rate_limit": {"mechanism": "`@nestjs/throttler` guard with per-user tracker", "verifier": "tests"},
+    "pii": {"mechanism": "pino redact paths for the named fields", "verifier": "tests"}
+  },
+  "verifiers": [
+    {"id": "tests", "kind": "tests", "argv": ["npx", "jest", "--runInBand", "src/{domain}/__tests__/{endpoint}.spec.ts"], "timeoutMs": 600000},
+    {"id": "typecheck", "kind": "typecheck", "argv": ["npx", "tsc", "--noEmit", "-p", "tsconfig.json"], "timeoutMs": 300000},
+    {"id": "call-graph", "kind": "call-graph", "argv": ["node", "{osHome}/procedural/scripts/callgraph-ts.mjs", "--spec", "{specPath}", "--root", "src"], "timeoutMs": 120000},
+    {"id": "openapi-diff", "kind": "openapi-diff", "argv": ["node", "{osHome}/procedural/scripts/openapi-diff.mjs", "--expected", ".engineering/apidog/openapi.json", "--actual-cmd", "node dist/openapi-dump.js", "--operation", "{endpointId}"], "timeoutMs": 120000},
+    {"id": "query-count", "kind": "query-count", "argv": ["npx", "jest", "--runInBand", "-t", "query budget", "src/{domain}/__tests__/{endpoint}.spec.ts"], "timeoutMs": 300000}
+  ],
+  "selection": {
+    "strengths": {"latency": 0.5, "throughput": 0.6, "asyncIo": 0.8, "relationalAdmin": 0.4, "typeSafety": 0.9, "teamTypescript": 1.0, "teamPython": 0.1, "teamGo": 0.1, "teamJava": 0.4, "aiIntegration": 0.5, "enterprise": 0.8, "rapidPrototyping": 0.6},
+    "notes": "Opinionated TypeScript with DI, decorators and first-class OpenAPI; best when frontend and backend share one language and the team values structure over minimalism."
+  },
+  "procedural": ["bp:nestjs:create-idempotent", "bp:nestjs:get-by-id", "bp:nestjs:list-paginated"]
+}

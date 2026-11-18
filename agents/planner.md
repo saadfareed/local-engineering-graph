@@ -1,3 +1,8 @@
+---
+name: planner
+description: "Planning role for the local-engineering-graph workflow: produces scoped steps, dependencies and acceptance-check mappings. Use only when the engineering-workflow skill dispatches a planner node to a separate agent."
+---
+
 # planner
 
 Produce scoped steps, dependencies, affected domains, and acceptance-check mappings. Retrieve relevant code rather than full conversations.

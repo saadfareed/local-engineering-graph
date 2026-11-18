@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "engineering-os/decision-card",
+  "title": "AWAITING_HUMAN decision card",
+  "description": "Structured question an agent emits instead of guessing. Rendered by the generative UI; the human's answer becomes a HITL delta of kind decision_card_answer.",
+  "type": "object",
+  "required": ["version", "cardId", "taskId", "node", "kind", "question", "options", "recommendation", "impact", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "cardId": {"type": "string", "pattern": "^card-[A-Za-z0-9._-]+$"},
+    "taskId": {"type": "string", "minLength": 1},
+    "node": {"type": "string", "minLength": 1, "description": "Graph node that paused (e.g. stack_selection, spec_approval, clarification)."},
+    "kind": {"type": "string", "enum": ["framework_selection", "spec_approval", "design_choice", "scope_clarification", "policy_exception", "merge_conflict", "other"]},
+    "question": {"type": "string", "minLength": 8, "maxLength": 2000},
+    "context": {"type": "string", "maxLength": 8000, "description": "Why the agent cannot decide alone. Markdown."},
+    "options": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "summary", "tradeoffs"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+          "label": {"type": "string", "minLength": 1, "maxLength": 120},
+          "summary": {"type": "string", "maxLength": 2000},
+          "tradeoffs": {
+            "type": "object", "required": ["pros", "cons"], "additionalProperties": false,
+            "properties": {
+              "pros": {"type": "array", "items": {"type": "string"}},
+              "cons": {"type": "array", "items": {"type": "string"}},
+              "risks": {"type": "array", "items": {"type": "string"}},
+              "costs": {"type": "object", "additionalProperties": {"type": "string"}, "description": "build/operate/maintain/migrate estimates with basis."}
+            }
+          },
+          "score": {"type": "number", "minimum": 0, "maximum": 100},
+          "scoreBreakdown": {"type": "object", "additionalProperties": {"type": "number"}},
+          "adapter": {"type": "string", "description": "Framework adapter id this option would lock (framework_selection cards)."}
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object", "required": ["optionId", "rationale", "confidence"], "additionalProperties": false,
+      "properties": {
+        "optionId": {"type": "string"},
+        "rationale": {"type": "string", "maxLength": 4000},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "revisitTrigger": {"type": "string"}
+      }
+    },
+    "impact": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "files": {"type": "array", "items": {"type": "string"}},
+        "endpoints": {"type": "array", "items": {"type": "string"}},
+        "repos": {"type": "array", "items": {"type": "string"}},
+        "policies": {"type": "array", "items": {"type": "string"}},
+        "reversibility": {"type": "string", "enum": ["trivial", "moderate", "hard", "irreversible"]}
+      }
+    },
+    "evidence": {"type": "array", "items": {"type": "object", "required": ["label", "ref"], "properties": {"label": {"type": "string"}, "ref": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}}},
+    "ui": {"$ref": "#/$defs/uiHint"},
+    "expiresAt": {"type": "string"},
+    "createdAt": {"type": "string"}
+  },
+  "$defs": {
+    "uiHint": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "layout": {"type": "string", "enum": ["cards", "table", "diff", "dag"]},
+        "allowFreeText": {"type": "boolean"},
+        "multiSelect": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "id": "fastapi",
+  "name": "FastAPI",
+  "language": "python",
+  "framework": "FastAPI",
+  "frameworkVersion": ">=0.115",
+  "runtime": {
+    "bootstrap": ["sh", "-c", "python3 -m venv .venv && .venv/bin/pip install -q fastapi 'uvicorn[standard]' sqlalchemy pydantic pytest httpx"],
+    "install": [".venv/bin/pip", "install", "-q", "-r", "requirements.txt"],
+    "test": [".venv/bin/python", "-m", "pytest", "-q", "{testPath}"],
+    "lint": [".venv/bin/python", "-m", "ruff", "check", "app"],
+    "typecheck": [".venv/bin/python", "-m", "mypy", "app"],
+    "serve": [".venv/bin/uvicorn", "app.main:app", "--port", "{port}"],
+    "openapiExport": [".venv/bin/python", "-c", "import json,app.main as m;print(json.dumps(m.app.openapi()))"],
+    "healthPath": "/healthz"
+  },
+  "layout": {
+    "root": "app",
+    "domainDir": "app/{domain}",
+    "tests": "tests/{domain}",
+    "migrations": "alembic/versions"
+  },
+  "typeMap": {
+    "string": "str", "string/uuid": "uuid.UUID", "string/date-time": "datetime.datetime", "string/date": "datetime.date",
+    "integer": "int", "number": "float", "boolean": "bool", "array": "list", "object": "dict", "null": "None"
+  },
+  "layers": [
+    {"id": "model", "role": "model", "path": "app/{domain}/models.py", "template": "templates/models.py.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}"]},
+    {"id": "schema", "role": "schema", "path": "app/{domain}/schemas.py", "template": "templates/schemas.py.tmpl", "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Endpoint}In", "{Endpoint}Out"]},
+    {"id": "repository", "role": "repository", "path": "app/{domain}/repository.py", "template": "templates/repository.py.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}Repository.get", "{Resource}Repository.insert", "{Resource}Repository.list", "{Resource}Repository.update", "{Resource}Repository.delete"]},
+    {"id": "service", "role": "service", "path": "app/{domain}/service.py", "template": "templates/service.py.tmpl", "mergeStrategy": "regenerate-block", "callGraphSymbols": ["{Resource}Service.{endpoint}"]},
+    {"id": "router", "role": "controller", "path": "app/{domain}/router.py", "template": "templates/router.py.tmpl", "mergeStrategy": "regenerate-block", "callGraphSymbols": ["router.{endpoint}"]},
+    {"id": "wiring", "role": "wiring", "path": "app/main.py", "template": "templates/main.py.tmpl", "perEndpoint": false, "mergeStrategy": "regenerate-block"},
+    {"id": "tests", "role": "test", "path": "tests/{domain}/test_{endpoint}.py", "template": "templates/test.py.tmpl", "mergeStrategy": "overwrite"}
+  ],
+  "policyBindings": {
+    "rbac": {"mechanism": "FastAPI dependency `require_scopes(...)` injected into the route; roles resolved from the JWT claims", "template": "templates/policy_rbac.py.tmpl", "verifier": "tests"},
+    "idempotency": {"mechanism": "dependency `idempotency_key()` + `IdempotencyStore` keyed on (user, key, body hash); replay returns the stored response", "template": "templates/policy_idempotency.py.tmpl", "verifier": "tests"},
+    "transaction": {"mechanism": "`async with session.begin():` around the service call named in the policy", "verifier": "call-graph"},
+    "queries": {"mechanism": "SQLAlchemy `selectinload`/`joinedload` for every relation named; statement counter fixture asserts the max", "verifier": "query-count"},
+    "latency_p95_ms": {"mechanism": "pytest-benchmark marker on the happy-path test with the budget", "verifier": "latency"},
+    "rate_limit": {"mechanism": "middleware token bucket keyed by user id", "verifier": "tests"},
+    "pii": {"mechanism": "structlog processor drops the named fields", "verifier": "tests"}
+  },
+  "verifiers": [
+    {"id": "tests", "kind": "tests", "argv": [".venv/bin/python", "-m", "pytest", "-q", "tests/{domain}/test_{endpoint}.py"], "timeoutMs": 600000},
+    {"id": "typecheck", "kind": "typecheck", "argv": [".venv/bin/python", "-m", "mypy", "app/{domain}"], "timeoutMs": 300000},
+    {"id": "call-graph", "kind": "call-graph", "argv": ["node", "{osHome}/procedural/scripts/callgraph-python.mjs", "--spec", "{specPath}", "--root", "app"], "timeoutMs": 120000},
+    {"id": "openapi-diff", "kind": "openapi-diff", "argv": ["node", "{osHome}/procedural/scripts/openapi-diff.mjs", "--expected", ".engineering/apidog/openapi.json", "--actual-cmd", ".venv/bin/python -c 'import json,app.main as m;print(json.dumps(m.app.openapi()))'", "--operation", "{endpointId}"], "timeoutMs": 120000},
+    {"id": "query-count", "kind": "query-count", "argv": [".venv/bin/python", "-m", "pytest", "-q", "-m", "query_budget", "tests/{domain}/test_{endpoint}.py"], "timeoutMs": 300000}
+  ],
+  "selection": {
+    "strengths": {"latency": 0.6, "throughput": 0.6, "asyncIo": 0.9, "relationalAdmin": 0.5, "typeSafety": 0.6, "teamTypescript": 0.1, "teamPython": 1.0, "teamGo": 0.1, "teamJava": 0.1, "aiIntegration": 1.0, "enterprise": 0.5, "rapidPrototyping": 0.9},
+    "notes": "Async Python with pydantic contracts; best for AI/ML-adjacent services and fast iteration. Needs discipline for large monoliths (no built-in admin or ORM)."
+  },
+  "procedural": ["bp:fastapi:create-idempotent", "bp:fastapi:get-by-id", "bp:fastapi:list-paginated"]
+}

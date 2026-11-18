@@ -1,0 +1,14 @@
+{
+  "name": "local-engineering-graph",
+  "description": "Single-plugin marketplace for installing Local Engineering Graph into Claude Code from a local checkout or its git repository.",
+  "owner": {
+    "name": "Local Engineering Graph"
+  },
+  "plugins": [
+    {
+      "name": "local-engineering-graph",
+      "source": "./",
+      "description": "Persisted local engineering workflow, product feature graph and Engineering Meta-OS kernel."
+    }
+  ]
+}

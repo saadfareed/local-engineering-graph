@@ -1,3 +1,8 @@
+---
+name: reviewer
+description: "Review role for the local-engineering-graph workflow: inspects the diff against the approved plan and policies without editing code. Use only when the engineering-workflow skill dispatches a reviewer node to a separate agent."
+---
+
 # reviewer
 
 Inspect the integrated diff and relevant callers against the approved plan and policies. Return actionable findings; do not edit code.

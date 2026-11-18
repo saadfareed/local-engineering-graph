@@ -1,0 +1,10 @@
+{
+  "name": "local-engineering-graph",
+  "displayName": "Local Engineering Graph",
+  "version": "0.13.0",
+  "description": "Plan, build, review and validate software using a persisted local engineering workflow, product feature graph and the Engineering Meta-OS kernel (API contracts, memory, worktree swarms, Apidog verification).",
+  "author": {
+    "name": "Local Engineering Graph"
+  },
+  "keywords": ["workflow", "engineering", "planning", "validation", "api-contracts", "worktrees"]
+}

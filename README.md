@@ -1,6 +1,6 @@
 # Local Engineering Graph
 
-Local Engineering Graph is a Codex plugin and local workflow runner for software work. It helps a coding agent turn a feature, bug or design question into a reviewable plan, preserve your approval and evidence, and check the change before calling the work complete.
+Local Engineering Graph is a plugin for Claude Code and Codex, plus a local workflow runner for software work. It helps a coding agent turn a feature, bug or design question into a reviewable plan, preserve your approval and evidence, and check the change before calling the work complete.
 
 ## The problem it addresses
 
@@ -8,14 +8,27 @@ Coding agents can start implementation before the request is clear, miss affecte
 
 ## Install and connect
 
-The plugin package needs its manifest and supporting files together. Do not install only the skill file. You need Node.js 22 or later to run the local workflow; there are no npm dependencies to install and no MCP server or separate model API key is required by this plugin.
+The plugin package needs its manifests and supporting files together. Do not install only the skill file. One package serves both hosts: Claude Code reads `.claude-plugin/`, Codex reads `.codex-plugin/`, and both share `skills/`, `agents/`, `src/`, `graphs/`, `docs/` and `policies/`. You need Node.js 22 or later to run the local workflow; there are no npm dependencies to install and no MCP server or separate model API key is required by this plugin.
+
+### Use as a Claude Code plugin
+
+The repository is its own single-plugin marketplace. From a shell, register the checkout and install the plugin:
+
+```sh
+claude plugin marketplace add /absolute/path/to/local-engineering-graph
+claude plugin install local-engineering-graph@local-engineering-graph
+```
+
+Inside a Claude Code session the same steps are `/plugin marketplace add /absolute/path/to/local-engineering-graph` and `/plugin install local-engineering-graph@local-engineering-graph`. To try the plugin for one session without installing it, start Claude Code with `claude --plugin-dir /absolute/path/to/local-engineering-graph`.
+
+Start a new session or run `/reload-plugins` after installing. Ask for the engineering workflow in chat, or run the skill directly as `/local-engineering-graph:engineering-workflow`. The workflow roles are also available as subagents named `local-engineering-graph:<role>`. Run `claude plugin validate .` from the checkout to check the manifests with Claude Code's own validator.
 
 ### Use as a Codex plugin
 
 1. Get the latest plugin release or download its complete package. When a newer plugin release is published, install or upload that latest release again to update your existing installation; an installed copy does not update itself.
 2. Install or upload it using the plugin installation flow available in your Codex host. Include the hidden `.codex-plugin/` directory along with `skills/`, `src/`, `graphs/`, `agents/`, `docs/` and `policies/`.
 3. Open the project you want to work on in Codex and ensure Codex can read and edit that project and run local commands.
-4. Start a new session after installing or updating the package, then invoke `local-engineering-graph` or its `engineering-workflow` skill.
+4. Start a new Codex session after installing or updating the package, then invoke `local-engineering-graph` or its `engineering-workflow` skill.
 
 The exact UI for installing a local plugin or ZIP depends on your Codex host. The package does not install itself globally. After installing the latest release, start a new session so Codex loads its updated skill snapshot. Changing this checkout does not update an already installed snapshot. `product-build.v7.json` is the current workflow graph format, not the plugin release number; use the newest plugin release even when its graph format version stays the same.
 
@@ -57,7 +70,7 @@ Product metadata may be committed with your code. Task records can contain proje
 
 | Problem | What to check or ask |
 | --- | --- |
-| The agent cannot find the plugin or skill | Start a new session; verify the full package was installed, including `.codex-plugin/` and `skills/`. For a checkout, provide the absolute path to the package root and skill. |
+| The agent cannot find the plugin or skill | Start a new session; verify the full package was installed, including `.claude-plugin/` (Claude Code) or `.codex-plugin/` (Codex) and `skills/`. In Claude Code, check `/plugin` for load errors and run `claude plugin validate .`. For a checkout, provide the absolute path to the package root and skill. |
 | The agent sees the skill but cannot run the workflow | Confirm it can read `src/`, `graphs/`, `agents/`, `policies/` and `docs/`, and that Node.js 22+ is available. |
 | `node` is missing or too old | Install/use Node.js 22 or later, then retry. This repository has no dependency installation step. |
 | The task is locked after an interruption | Ask the agent to inspect whether the local writer is still running, then use the documented recovery command only if the writer exited. See [workflow recovery](docs/workflow.md). |
@@ -90,4 +103,4 @@ For contributors, run the repository checks with `npm run check`. This runs the 
 node src/cli.js start /absolute/project/path graphs/product-build.v7.json "Build a task tracker"
 ```
 
-The [user manual](docs/user-manual.md) has more prompts, expected outcomes and impact details. Maintainer references: [workflow contracts](docs/workflow.md), [product lifecycle](docs/product-lifecycle.md), [product map](docs/product-map.md), [architecture](docs/architecture.md), [extension guide](docs/extension-guide.md), [policy guide](docs/policy-guide.md), [critical planning](docs/critical-planning.md) and [engineering quality](docs/engineering-quality.md).
+The [user manual](docs/user-manual.md) has more prompts, expected outcomes and impact details. Maintainer references: [workflow contracts](docs/workflow.md), [product lifecycle](docs/product-lifecycle.md), [product map](docs/product-map.md), [architecture](docs/architecture.md), [extension guide](docs/extension-guide.md), [policy guide](docs/policy-guide.md), [critical planning](docs/critical-planning.md), [engineering quality](docs/engineering-quality.md) and the [Meta-OS architecture package](docs/meta-os/README.md) (kernel CLI: `node src/os.js`).

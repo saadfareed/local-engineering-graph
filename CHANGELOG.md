@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.0
+
+- Package the plugin for Claude Code as well as Codex. Added `.claude-plugin/plugin.json` and a single-plugin `.claude-plugin/marketplace.json` whose source is the repository root, so a checkout installs with `claude plugin marketplace add` and `claude plugin install local-engineering-graph@local-engineering-graph`. Both hosts share `skills/`, `agents/` and the Node.js runner.
+- Aligned versions: `package.json`, the Claude manifest and the Codex manifest are all 0.13.0 (the Codex manifest previously said 0.8.0).
+- Gave every role file in `agents/` frontmatter (`name`, quoted `description`) so Claude Code loads the roles as subagents named `local-engineering-graph:<role>`. Codex continues to read them as role instructions. Added the missing `integration-coordinator` role for `graphs/parallel-build.v1.json` and a `memory-curator` role for the Meta-OS consolidation node.
+- Made the `engineering-workflow` skill host-neutral: it resolves the package root from `${CLAUDE_PLUGIN_ROOT}` in Claude Code and from its own location elsewhere, explains subagent delegation in Claude Code, and documents the Engineering Meta-OS commands (`node src/os.js`).
+- Added the Engineering Meta-OS kernel and architecture package: `docs/meta-os/` (topology, lifecycle, templates, schemas, FastAPI and NestJS adapter manifests, phased briefs), `src/memory/`, `src/daemon/bus.js`, `src/exporters/apidog-sync.js`, `src/contracts/spec.js`, `src/intent/selector.js`, `src/schema/`, `src/kernel/util.js`, the `src/os.js` CLI and `graphs/api-platform.v1.json`. The existing runner is unchanged.
+- Added `src/package-check.js`, run by `npm run validate` and `tests/packaging.test.js`, which fails when the manifests disagree on name, version or description, when a skill or agent lacks valid frontmatter, when a graph role has no role file, or when a root `CLAUDE.md` appears.
+
 ## 0.12.0
 
 - Added an opt-in, additive `parallelWorkers` boolean to the graph header. It requires `evidenceMode: "structured"` and, on the parent graph, relaxes the four base evidence contracts (`worker.completed`, `reviewer.passed`, `validator.passed`) so a pure dispatch+integration parent validates; `user.approved` is still enforced only when the parent keeps a `role: "user"` approval node. The flag is strictly gated on `parallelWorkers === true`; absent or `false`, graph validation is byte-identical to 0.11.0 (the four base contracts are required exactly as before).

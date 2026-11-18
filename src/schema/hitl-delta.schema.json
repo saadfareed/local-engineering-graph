@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "engineering-os/hitl-delta",
+  "title": "HITL delta record (.engineering/human-overrides.jsonl line)",
+  "description": "Exact before/after captured whenever a human answers a card, edits a spec or plan, rejects a review or states a preference. Consumed by the sleep-cycle consolidator.",
+  "type": "object",
+  "required": ["version", "deltaId", "kind", "taskId", "createdAt", "actor"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "deltaId": {"type": "string", "pattern": "^delta-[A-Za-z0-9._-]+$"},
+    "kind": {"type": "string", "enum": ["decision_card_answer", "spec_edit", "plan_edit", "review_rejection", "preference"]},
+    "taskId": {"type": "string", "minLength": 1},
+    "repo": {"type": ["string", "null"]},
+    "node": {"type": "string"},
+    "actor": {"type": "string", "enum": ["human", "agent"], "description": "Only human deltas are consolidated into alignment memory."},
+    "createdAt": {"type": "string"},
+    "anchorSha": {"type": ["string", "null"], "pattern": "^[a-f0-9]{7,40}$"},
+    "ruleKey": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "Normalized rule slug used to count repeated feedback across tasks."},
+    "card": {
+      "type": "object", "required": ["cardId", "chosenOptionId"], "additionalProperties": false,
+      "properties": {
+        "cardId": {"type": "string"},
+        "cardSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "question": {"type": "string"},
+        "recommendedOptionId": {"type": "string"},
+        "chosenOptionId": {"type": "string"},
+        "chosenLabel": {"type": "string"},
+        "options": {"type": "array", "items": {"type": "object"}},
+        "humanRationale": {"type": "string", "maxLength": 8000},
+        "overrodeRecommendation": {"type": "boolean"},
+        "impact": {"type": "object"}
+      }
+    },
+    "edit": {
+      "type": "object", "required": ["path", "before", "after"], "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string"},
+        "before": {"type": "string"},
+        "after": {"type": "string"},
+        "beforeSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "afterSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "reason": {"type": "string", "maxLength": 4000}
+      }
+    },
+    "review": {
+      "type": "object", "required": ["rule", "finding"], "additionalProperties": false,
+      "properties": {
+        "rule": {"type": "string", "minLength": 4, "maxLength": 500, "description": "The general rule the human applied, phrased to be reusable (\"never log address payloads\")."},
+        "finding": {"type": "string", "maxLength": 4000},
+        "files": {"type": "array", "items": {"type": "string"}},
+        "endpointId": {"type": "string"},
+        "severity": {"type": "string", "enum": ["blocker", "major", "minor", "nit"]},
+        "scope": {"type": "string", "enum": ["project", "global"]}
+      }
+    },
+    "preference": {
+      "type": "object", "required": ["statement"], "additionalProperties": false,
+      "properties": {
+        "statement": {"type": "string", "minLength": 4, "maxLength": 1000},
+        "category": {"type": "string", "enum": ["style", "architecture", "testing", "tooling", "process", "naming", "other"]},
+        "scope": {"type": "string", "enum": ["project", "global"]}
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"const": "decision_card_answer"}}}, "then": {"required": ["card"]}},
+    {"if": {"properties": {"kind": {"enum": ["spec_edit", "plan_edit"]}}}, "then": {"required": ["edit"]}},
+    {"if": {"properties": {"kind": {"const": "review_rejection"}}}, "then": {"required": ["review"]}},
+    {"if": {"properties": {"kind": {"const": "preference"}}}, "then": {"required": ["preference"]}}
+  ]
+}
